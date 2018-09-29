@@ -1,5 +1,6 @@
 package world.bentobox.bentobox.util.teleport;
 
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.junit.Before;
@@ -14,6 +15,8 @@ import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.managers.LocalesManager;
+
+import java.util.Optional;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -45,7 +48,7 @@ public class SafeSpotTeleportBuilderTest {
         // Locales - final
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
-        when(lm.get(any(), any())).thenReturn("mock translation");
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent("mock translation")));
     }
 
     @Test

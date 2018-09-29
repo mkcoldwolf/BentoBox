@@ -1,9 +1,11 @@
 package world.bentobox.bentobox.api.user;
 
 
+import net.md_5.bungee.api.ChatColor;
 import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.Particle;
 import org.bukkit.World;
@@ -200,7 +202,7 @@ public class User {
         final Optional<TextComponent> t = plugin.getLocalesManager().get(this, reference);
 
         // Get translation
-        String translation = plugin.getLocalesManager().get(this, reference);
+        String translation = plugin.getLocalesManager().get(this, reference).orElse(new TextComponent(TextComponent.fromLegacyText(reference))).toLegacyText();
 
         // If no translation has been found, return the reference for debug purposes.
         if (translation == null) {

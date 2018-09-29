@@ -11,8 +11,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.UUID;
 
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitScheduler;
@@ -119,7 +121,7 @@ public class IslandTeamUntrustCommandTest {
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        when(lm.get(Mockito.any(), Mockito.any())).thenReturn("mock translation");
+        when(lm.get(Mockito.any(), Mockito.any())).thenReturn(Optional.of(new TextComponent("mock translation")));
         when(plugin.getLocalesManager()).thenReturn(lm);
 
         // IWM friendly name
@@ -132,7 +134,7 @@ public class IslandTeamUntrustCommandTest {
      * Test method for {@link world.bentobox.bentobox.api.commands.island.team.IslandTeamUntrustCommand#execute(world.bentobox.bentobox.api.user.User, java.lang.String, java.util.List)}.
      */
     @Test
-    public void testExecuteNoisland() {
+    public void testExecuteNoIsland() {
         when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
         when(im.inTeam(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
         IslandTeamUntrustCommand itl = new IslandTeamUntrustCommand(ic);

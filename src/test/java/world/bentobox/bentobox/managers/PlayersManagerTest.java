@@ -18,9 +18,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Logger;
 
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
@@ -133,7 +135,7 @@ public class PlayersManagerTest {
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        when(lm.get(Mockito.any(), Mockito.any())).thenReturn("mock translation");
+        when(lm.get(Mockito.any(), Mockito.any())).thenReturn(Optional.of(new TextComponent("mock translation")));
         when(plugin.getLocalesManager()).thenReturn(lm);
 
         // Normally in world

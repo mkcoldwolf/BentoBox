@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Optional;
 import java.util.UUID;
 
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -109,7 +110,7 @@ public class AdminRegisterCommandTest {
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        when(lm.get(Mockito.any(), Mockito.any())).thenReturn("mock translation");
+        when(lm.get(Mockito.any(), Mockito.any())).thenReturn(Optional.of(new TextComponent("mock translation")));
         when(plugin.getLocalesManager()).thenReturn(lm);
     }
 

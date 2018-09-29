@@ -11,10 +11,12 @@ import static org.mockito.Mockito.when;
 
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
@@ -208,7 +210,7 @@ public class UserTest {
         // Locales - final
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
-        when(lm.get(any(), any())).thenReturn("mock translation [test]");
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent("mock translation [test]")));
 
         User user = User.getInstance(player);
         assertEquals("mock translation [test]", user.getTranslation("a.reference"));
@@ -228,7 +230,7 @@ public class UserTest {
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
         // Return the original string to pretend that a translation could not be found
-        when(lm.get(any(), any())).thenReturn("fake.reference");
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent("fake.reference")));
 
         User user = User.getInstance(player);
         assertEquals("", user.getTranslationOrNothing("fake.reference"));
@@ -243,7 +245,7 @@ public class UserTest {
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
         String translation = ChatColor.RED + "" + ChatColor.BOLD + "test translation";
-        when(lm.get(any(), any())).thenReturn(translation);
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent(translation)));
 
         Player pl = mock(Player.class);
 
@@ -260,7 +262,7 @@ public class UserTest {
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
         String translation = ChatColor.RED + "" + ChatColor.BOLD + "test translation";
-        when(lm.get(any(), any())).thenReturn(translation);
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent(translation)));
 
         Player pl = mock(Player.class);
 
@@ -277,7 +279,7 @@ public class UserTest {
         // Locales - final
         LocalesManager lm = mock(LocalesManager.class);
         // Nothing - blank translation
-        when(lm.get(any(), any())).thenReturn("");
+        when(lm.get(any(), any())).thenReturn(Optional.empty());
         when(plugin.getLocalesManager()).thenReturn(lm);
 
         Player pl = mock(Player.class);
@@ -303,7 +305,7 @@ public class UserTest {
         for (ChatColor cc : ChatColor.values()) {
             allColors.append(cc);
         }
-        when(lm.get(any(), any())).thenReturn(allColors.toString());
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent(allColors.toString())));
         user.sendMessage("a.reference");
         Mockito.verify(pl, Mockito.never()).sendMessage(Mockito.anyString());
 
@@ -349,7 +351,7 @@ public class UserTest {
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
         String translation = ChatColor.RED + "" + ChatColor.BOLD + "test translation";
-        when(lm.get(any(), any())).thenReturn(translation);
+        when(lm.get(any(), any())).thenReturn(Optional.of(new TextComponent(translation)));
 
         Player pl = mock(Player.class);
         User user = User.getInstance(pl);
