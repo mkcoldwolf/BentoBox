@@ -1,12 +1,12 @@
 package world.bentobox.bentobox.api.user;
 
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
-import org.bukkit.*;
+import net.md_5.bungee.api.chat.TextComponent;
+import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.Particle;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.PlayerInventory;
@@ -14,6 +14,13 @@ import org.bukkit.permissions.PermissionAttachmentInfo;
 
 import org.bukkit.util.Vector;
 import world.bentobox.bentobox.BentoBox;
+
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * BSB's user object. Wraps Player.
@@ -189,7 +196,9 @@ public class User {
      *                  "[name]", "tastybento"
      * @return Translated string with colors converted, or the reference if nothing has been found
      */
-    public String getTranslation(String reference, String... variables) {
+    public String getTranslation(final String reference, final String... variables) {
+        final Optional<TextComponent> t = plugin.getLocalesManager().get(this, reference);
+
         // Get translation
         String translation = plugin.getLocalesManager().get(this, reference);
 

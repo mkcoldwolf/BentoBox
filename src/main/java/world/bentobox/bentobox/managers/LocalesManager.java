@@ -11,7 +11,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
+import net.md_5.bungee.api.chat.TextComponent;
+import net.md_5.bungee.chat.ComponentSerializer;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import world.bentobox.bentobox.BentoBox;
@@ -35,25 +38,31 @@ public class LocalesManager {
     }
 
     /**
-     * Gets the reference from the locale file for this user
+     * Gets the localized BaseComponent based on the reference from the locale file for this user
      * @param user - the User
      * @param reference - a reference that can be found in a locale file
      * @return the translated string, or if the translation does not exist, the default language version, or if that does not exist null
      */
-    public String get(User user, String reference) {
+    public Optional<TextComponent> get(User user, String reference) {
         BentoBoxLocale locale = languages.get(user.getLocale());
+        String text = null;
         if (locale != null && locale.contains(reference)) {
-            return locale.get(reference);
+            text = locale.get(reference);
         }
-        // Return the default
-        if (languages.get(Locale.forLanguageTag(plugin.getSettings().getDefaultLanguage())).contains(reference)) {
-            return languages.get(Locale.forLanguageTag(plugin.getSettings().getDefaultLanguage())).get(reference);
+        // Return the default if none has been found
+        if (text != null && languages.get(Locale.forLanguageTag(plugin.getSettings().getDefaultLanguage())).contains(reference)) {
+            text = languages.get(Locale.forLanguageTag(plugin.getSettings().getDefaultLanguage())).get(reference);
         }
         // Or try in the en-US locale
-        if (languages.get(Locale.forLanguageTag("en-US")).contains(reference)) {
-            return languages.get(Locale.forLanguageTag("en-US")).get(reference);
+        if (text != null && languages.get(Locale.forLanguageTag("en-US")).contains(reference)) {
+            text = languages.get(Locale.forLanguageTag("en-US")).get(reference);
         }
-        return null;
+
+        if (text == null) {
+            return Optional.empty();
+        }
+
+        return Optional.of(new TextComponent(ComponentSerializer.parse(text)));
     }
 
     /**
