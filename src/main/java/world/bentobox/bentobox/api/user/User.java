@@ -20,7 +20,6 @@ import world.bentobox.bentobox.BentoBox;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -196,27 +195,20 @@ public class User {
      * @param reference - reference found in a locale file
      * @param variables - variables to insert into translated string. Variables go in pairs, for example
      *                  "[name]", "tastybento"
-     * @return Translated string with colors converted, or the reference if nothing has been found
+     * @return TextComponent containing the translated string with colors converted, or the reference if nothing has been found
      */
-    public String getTranslation(final String reference, final String... variables) {
-        final Optional<TextComponent> t = plugin.getLocalesManager().get(this, reference);
-
+    public TextComponent getTranslation(String reference, String... variables) {
         // Get translation
-        String translation = plugin.getLocalesManager().get(this, reference).orElse(new TextComponent(TextComponent.fromLegacyText(reference))).toLegacyText();
-
-        // If no translation has been found, return the reference for debug purposes.
-        if (translation == null) {
-            return reference;
-        }
+        TextComponent translation = plugin.getLocalesManager().get(this, reference).orElse(new TextComponent(reference));
 
         // Then replace variables
         if (variables.length > 1) {
             for (int i = 0; i < variables.length; i += 2) {
-                translation = translation.replace(variables[i], variables[i+1]);
+                translation.setText(translation.getText().replace(variables[i], variables[i+1]));
             }
         }
 
-        return ChatColor.translateAlternateColorCodes('&', translation);
+        return translation;
     }
 
     /**
@@ -224,11 +216,11 @@ public class User {
      * @param reference - reference found in a locale file
      * @param variables - variables to insert into translated string. Variables go in pairs, for example
      *                  "[name]", "tastybento"
-     * @return Translated string with colors converted, or a blank String if nothing has been found
+     * @return TextComponent containing the translated string with colors converted, or a blank String if nothing has been found
      */
-    public String getTranslationOrNothing(String reference, String... variables) {
-        String translation = getTranslation(reference, variables);
-        return translation.equals(reference) ? "" : translation;
+    public TextComponent getTranslationOrNothing(String reference, String... variables) {
+        TextComponent translation = getTranslation(reference, variables);
+        return translation.getText().equals(reference) ? new TextComponent("") : translation;
     }
 
     /**
@@ -237,14 +229,27 @@ public class User {
      * @param variables - CharSequence target, replacement pairs
      */
     public void sendMessage(String reference, String... variables) {
-        String message = getTranslation(reference, variables);
-        if (!ChatColor.stripColor(message).trim().isEmpty()) {
+        TextComponent message = getTranslation(reference, variables);
+        if (!ChatColor.stripColor(message.getText()).trim().isEmpty()) {
             if (sender != null) {
-                sender.sendMessage(message);
+                sender.spigot().sendMessage(message);
             } else {
                 // TODO: Offline message
                 // Save this message so the player can see it later
             }
+        }
+    }
+
+    /**
+     * Sends a message to sender without any modification (colors, multi-lines, placeholders).
+     * @param message - the message to send
+     */
+    public void sendRawMessage(TextComponent message) {
+        if (sender != null) {
+            sender.spigot().sendMessage(message);
+        } else {
+            // TODO: Offline message
+            // Save this message so the player can see it later
         }
     }
 
@@ -269,8 +274,8 @@ public class User {
      * @see Notifier
      */
     public void notify(String reference, String... variables) {
-        String message = getTranslation(reference, variables);
-        if (!ChatColor.stripColor(message).trim().isEmpty() && sender != null) {
+        TextComponent message = getTranslation(reference, variables);
+        if (!ChatColor.stripColor(message.getText()).trim().isEmpty() && sender != null) {
             plugin.getNotifier().notify(this, message);
         }
     }
