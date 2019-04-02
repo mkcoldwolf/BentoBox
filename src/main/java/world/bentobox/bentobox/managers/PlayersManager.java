@@ -10,8 +10,8 @@ import java.util.UUID;
 
 import org.bukkit.Location;
 import org.bukkit.World;
-
 import org.eclipse.jdt.annotation.NonNull;
+
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.Database;
@@ -113,6 +113,12 @@ public class PlayersManager {
             // If the player is in the database, load it, otherwise create a new player
             if (handler.objectExists(playerUUID.toString())) {
                 player = handler.loadObject(playerUUID.toString());
+                if (player == null) {
+                    player = new Players(plugin, playerUUID);
+                    // Corrupted database entry
+                    plugin.logError("Corrupted player database entry for " + playerUUID + " - unrecoverable. Recreated.");
+                    player.setUniqueId(playerUUID.toString());
+                }
             } else {
                 player = new Players(plugin, playerUUID);
             }
@@ -138,8 +144,7 @@ public class PlayersManager {
      * @param number - a number - 1 is default. Can be any number.
      */
     public void setHomeLocation(User user, Location location, int number) {
-        addPlayer(user.getUniqueId());
-        playerCache.get(user.getUniqueId()).setHomeLocation(location,number);
+        setHomeLocation(user.getUniqueId(), location,number);
     }
 
     /**
@@ -159,8 +164,7 @@ public class PlayersManager {
      * @param location - the location
      */
     public void setHomeLocation(UUID playerUUID, Location location) {
-        addPlayer(playerUUID);
-        playerCache.get(playerUUID).setHomeLocation(location,1);
+        setHomeLocation(playerUUID, location,1);
     }
 
     /**

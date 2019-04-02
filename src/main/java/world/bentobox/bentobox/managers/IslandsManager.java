@@ -1,18 +1,11 @@
 package world.bentobox.bentobox.managers;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-
+import com.google.common.collect.ImmutableMap;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.TreeSpecies;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -20,18 +13,18 @@ import org.bukkit.block.data.BlockData;
 import org.bukkit.block.data.Openable;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.Monster;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.PufferFish;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.util.Vector;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
-
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.events.IslandBaseEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent.Reason;
 import world.bentobox.bentobox.api.localization.TextVariables;
+import world.bentobox.bentobox.api.logs.LogEntry;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.Database;
 import world.bentobox.bentobox.database.objects.Island;
@@ -42,6 +35,17 @@ import world.bentobox.bentobox.util.DeleteIslandChunks;
 import world.bentobox.bentobox.util.Util;
 import world.bentobox.bentobox.util.teleport.SafeSpotTeleport;
 
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
 /**
  * The job of this class is manage all island related data.
  * It also handles island ownership, including team, trustees, coops, etc.
@@ -51,6 +55,15 @@ import world.bentobox.bentobox.util.teleport.SafeSpotTeleport;
 public class IslandsManager {
 
     private BentoBox plugin;
+
+    // Tree species to boat material map
+    private static final Map<TreeSpecies, Material> TREE_TO_BOAT = ImmutableMap.<TreeSpecies, Material>builder().
+            put(TreeSpecies.ACACIA, Material.ACACIA_BOAT).
+            put(TreeSpecies.BIRCH, Material.BIRCH_BOAT).
+            put(TreeSpecies.DARK_OAK, Material.DARK_OAK_BOAT).
+            put(TreeSpecies.JUNGLE, Material.JUNGLE_BOAT).
+            put(TreeSpecies.GENERIC, Material.OAK_BOAT).
+            put(TreeSpecies.REDWOOD, Material.SPRUCE_BOAT).build();
 
     /**
      * One island can be spawn, this is the one - otherwise, this value is null
@@ -70,6 +83,12 @@ public class IslandsManager {
     // Island Cache
     @NonNull
     private IslandCache islandCache;
+    // Quarantined islands
+    @NonNull
+    private Map<UUID, List<Island>> quarantineCache;
+    // Deleted islands
+    @NonNull
+    private List<String> deletedIslands;
 
     /**
      * Islands Manager
@@ -80,8 +99,12 @@ public class IslandsManager {
         // Set up the database handler to store and retrieve Island classes
         handler = new Database<>(plugin, Island.class);
         islandCache = new IslandCache();
+        quarantineCache = new HashMap<>();
         spawn = new HashMap<>();
         last = new HashMap<>();
+        // This list should always be empty unless database deletion failed
+        // In that case a purge utility may be required in the future
+        deletedIslands = new ArrayList<>();
     }
 
     /**
@@ -227,13 +250,16 @@ public class IslandsManager {
      * @return Island or null if the island could not be created for some reason
      */
     @Nullable
-    public Island createIsland(@NonNull Location location, @Nullable UUID owner){
+    public Island createIsland(@NonNull Location location, @Nullable UUID owner) {
         Island island = new Island(location, owner, plugin.getIWM().getIslandProtectionRange(location.getWorld()));
+        // Game the gamemode name and prefix the uniqueId
+        String gmName = plugin.getIWM().getAddon(location.getWorld()).map(gm -> gm.getDescription().getName()).orElse("");
+        island.setUniqueId(gmName + island.getUniqueId());
         while (handler.objectExists(island.getUniqueId())) {
             // This should never happen, so although this is a potential infinite loop I'm going to leave it here because
             // it will be bad if this does occur and the server should crash.
             plugin.logWarning("Duplicate island UUID occurred");
-            island.setUniqueId(UUID.randomUUID().toString());
+            island.setUniqueId(gmName + UUID.randomUUID().toString());
         }
         if (islandCache.addIsland(island)) {
             return island;
@@ -258,7 +284,13 @@ public class IslandsManager {
         if (removeBlocks) {
             // Remove island from the cache
             islandCache.deleteIslandFromCache(island);
-            // Remove the island from the database
+            // Log the deletion (it shouldn't matter but may be useful)
+            island.log(new LogEntry.Builder("DELETED").build());
+            // Set the delete flag which will prevent it from being loaded even if database deletion fails
+            island.setDeleted(true);
+            // Save the island
+            handler.saveObject(island);
+            // Delete the island
             handler.deleteObject(island);
             // Remove players from island
             removePlayersFromIsland(island);
@@ -289,7 +321,7 @@ public class IslandsManager {
 
     /**
      * Gets the island for this player. If they are in a team, the team island is returned.
-     * @param world world to check
+     * @param world world to check. Includes nether and end worlds.
      * @param uuid user's uuid
      * @return Island or null
      */
@@ -572,7 +604,7 @@ public class IslandsManager {
                 player.leaveVehicle();
                 // Remove the boat so they don't lie around everywhere
                 boat.remove();
-                player.getInventory().addItem(new ItemStack(Material.getMaterial(((Boat) boat).getWoodType().toString() + "_BOAT"), 1));
+                player.getInventory().addItem(new ItemStack(TREE_TO_BOAT.getOrDefault(((Boat) boat).getWoodType(), Material.OAK_BOAT)));
                 player.updateInventory();
             }
         }
@@ -621,14 +653,14 @@ public class IslandsManager {
      */
     public void spawnTeleport(@NonNull World world, @NonNull Player player) {
         User user = User.getInstance(player);
-        Optional<Island> spawnIsland = getSpawn(world);
-
-        if (!spawnIsland.isPresent()) {
+        // If there's no spawn island or the spawn location is null for some reason, then error
+        Location spawnTo = getSpawn(world).map(i -> i.getSpawnPoint(World.Environment.NORMAL) == null ? i.getCenter() : i.getSpawnPoint(World.Environment.NORMAL))
+                .orElse(null);
+        if (spawnTo == null) {
             // There is no spawn here.
             user.sendMessage("commands.island.spawn.no-spawn");
         } else {
             // Teleport the player to the spawn
-
             // Stop any gliding
             player.setGliding(false);
             // Check if the player is a passenger in a boat
@@ -644,12 +676,8 @@ public class IslandsManager {
             }
 
             user.sendMessage("commands.island.spawn.teleporting");
-            player.teleport(spawnIsland.get().getSpawnPoint(World.Environment.NORMAL));
-
-            // If the player is in SPECTATOR gamemode, reset it to default
-            if (player.getGameMode().equals(GameMode.SPECTATOR)) {
-                player.setGameMode(plugin.getIWM().getDefaultGameMode(world));
-            }
+            // Safe teleport
+            new SafeSpotTeleport.Builder(plugin).entity(player).location(spawnTo).build();
         }
     }
 
@@ -680,7 +708,6 @@ public class IslandsManager {
                 oldSpawn.setSpawn(false);
             }
         }
-
         this.spawn.put(spawn.getWorld(), spawn);
         spawn.setSpawn(true);
     }
@@ -698,22 +725,57 @@ public class IslandsManager {
      */
     public void load(){
         islandCache.clear();
+        quarantineCache.clear();
         List<Island> toQuarantine = new ArrayList<>();
-        // Only load non-quarantined island
-        // TODO: write a purge admin command to delete these records
-        handler.loadObjects().stream().filter(i -> !i.isDoNotLoad()).forEach(island -> {
-           if (!islandCache.addIsland(island)) {
-               // Quarantine the offending island
-               toQuarantine.add(island);
-           }
+        // Attempt to load islands
+        handler.loadObjects().stream().forEach(island -> {
+            if (island.isDeleted()) {
+                // These will be deleted later
+                deletedIslands.add(island.getUniqueId());
+            } else if (island.isDoNotLoad() && island.getWorld() != null && island.getCenter() != null) {
+                // Add to quarantine cache
+                quarantineCache.computeIfAbsent(island.getOwner(), k -> new ArrayList<>()).add(island);
+            } else {
+                // Fix island center if it is off
+                fixIslandCenter(island);
+                if (!islandCache.addIsland(island)) {
+                    // Quarantine the offending island
+                    toQuarantine.add(island);
+                    // Add to quarantine cache
+                    island.setDoNotLoad(true);
+                    quarantineCache.computeIfAbsent(island.getOwner(), k -> new ArrayList<>()).add(island);
+                } else if (island.isSpawn()) {
+                    // Success, set spawn if this is the spawn island.
+                    this.setSpawn(island);
+                }
+            }
         });
         if (!toQuarantine.isEmpty()) {
-            plugin.logError(toQuarantine.size() + " islands could not be loaded successfully; quarantining.");
-            toQuarantine.forEach(i -> {
-                i.setDoNotLoad(true);
-                handler.saveObject(i);
-            });          
+            plugin.logError(toQuarantine.size() + " islands could not be loaded successfully; moving to trash bin.");
+            toQuarantine.forEach(handler::saveObject);
         }
+    }
+
+    /**
+     * Island coordinates should always be a multiple of the island distance x 2. If they are not, this method
+     * realigns the grid coordinates.
+     * @param island - island
+     * @since 1.3.0
+     */
+    public void fixIslandCenter(Island island) {
+        World world = island.getWorld();
+        if (world == null || island.getCenter() == null || !plugin.getIWM().inWorld(world)) {
+            return;
+        }
+        int distance = island.getRange() * 2;
+        long x = ((long) island.getCenter().getBlockX()) - plugin.getIWM().getIslandXOffset(world);
+        long z = ((long) island.getCenter().getBlockZ()) - plugin.getIWM().getIslandZOffset(world);
+        if (x % distance != 0 || z % distance != 0) {
+            // Island is off grid
+            x = Math.round((double) x / distance) * distance + plugin.getIWM().getIslandXOffset(world);
+            z = Math.round((double) z / distance) * distance + plugin.getIWM().getIslandZOffset(world);
+        }
+        island.setCenter(new Location(world, x, island.getCenter().getBlockY(), z));
     }
 
     /**
@@ -733,9 +795,9 @@ public class IslandsManager {
     }
 
     /**
-     * Checks if an online player is in the protected area of an island he owns or he is part of.
+     * Checks if an online player is in the protected area of an island he owns or he is part of. i.e. rank is > VISITOR_RANK
      *
-     * @param world the World to check, if null the method will always return {@code false}.
+     * @param world the World to check. Typically this is the user's world. Does not check nether or end worlds. If null the method will always return {@code false}.
      * @param user the User to check, if null or if this is not a Player the method will always return {@code false}.
      *
      * @return {@code true} if this User is located within the protected area of an island he owns or he is part of,
@@ -774,8 +836,7 @@ public class IslandsManager {
     }
 
     /**
-     * This removes players from an island overworld and nether - used when reseting or deleting an island
-     * Mobs are killed when the chunks are refreshed.
+     * This teleports players away from an island - used when reseting or deleting an island
      * @param island to remove players from
      */
     public void removePlayersFromIsland(Island island) {
@@ -907,8 +968,9 @@ public class IslandsManager {
      */
     public void clearArea(Location loc) {
         loc.getWorld().getNearbyEntities(loc, 5D, 5D, 5D).stream()
-        .filter(en -> (en instanceof Monster))
-        .filter(en -> !plugin.getIWM().getRemoveMobsWhitelist(loc.getWorld()).contains(en.getType()))
+        .filter(en -> Util.isHostileEntity(en)
+                && !plugin.getIWM().getRemoveMobsWhitelist(loc.getWorld()).contains(en.getType())
+                && !(en instanceof PufferFish))
         .forEach(Entity::remove);
     }
 
@@ -931,4 +993,122 @@ public class IslandsManager {
         handler.saveObject(island);
     }
 
+    /**
+     * Try to get an island by its unique id
+     * @param uniqueId - unique id string
+     * @return optional island
+     * @since 1.3.0
+     */
+    @NonNull
+    public Optional<Island> getIslandById(String uniqueId) {
+        return Optional.ofNullable(islandCache.getIslandById(uniqueId));
+    }
+
+    /**
+     * Try to get a list of quarantined islands owned by uuid in this world
+     *
+     * @param world - world
+     * @param uuid - target player's UUID, or <tt>null</tt> = unowned islands
+     * @return list of islands; may be empty
+     * @since 1.3.0
+     */
+    @NonNull
+    public List<Island> getQuarantinedIslandByUser(@NonNull World world, @Nullable UUID uuid) {
+        return quarantineCache.getOrDefault(uuid, Collections.emptyList()).stream()
+                .filter(i -> i.getWorld().equals(world)).collect(Collectors.toList());
+    }
+
+    /**
+     * Delete quarantined islands owned by uuid in this world
+     *
+     * @param world - world
+     * @param uuid - target player's UUID, or <tt>null</tt> = unowned islands
+     * @since 1.3.0
+     */
+    public void deleteQuarantinedIslandByUser(World world, @Nullable UUID uuid) {
+        if (quarantineCache.containsKey(uuid)) {
+            quarantineCache.get(uuid).stream().filter(i -> i.getWorld().equals(world))
+            .forEach(i -> handler.deleteObject(i));
+            quarantineCache.get(uuid).removeIf(i -> i.getWorld().equals(world));
+        }
+    }
+
+    /**
+     * @return the quarantineCache
+     * @since 1.3.0
+     */
+    @NonNull
+    public Map<UUID, List<Island>> getQuarantineCache() {
+        return quarantineCache;
+    }
+
+    /**
+     * Remove a quarantined island and delete it from the database completely.
+     * This is NOT recoverable unless you have database backups.
+     * @param island island
+     * @return {@code true} if island is quarantined and removed
+     * @since 1.3.0
+     */
+    public boolean purgeQuarantinedIsland(Island island) {
+        if (quarantineCache.containsKey(island.getOwner()) && quarantineCache.get(island.getOwner()).remove(island)) {
+            handler.deleteObject(island);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Switches active island and island in trash
+     * @param world  - game world
+     * @param target - target player's UUID
+     * @param island - island in trash
+     * @return <tt>true</tt> if successful, otherwise <tt>false</tt>
+     * @since 1.3.0
+     */
+    public boolean switchIsland(World world, UUID target, Island island) {
+        // Remove trashed island from trash
+        if (!quarantineCache.containsKey(island.getOwner()) || !quarantineCache.get(island.getOwner()).remove(island)) {
+            plugin.logError("Could not remove island from trash");
+            return false;
+        }
+        // Remove old island from cache if it exists
+        if (this.hasIsland(world, target)) {
+            Island oldIsland = islandCache.get(world, target);
+            islandCache.removeIsland(oldIsland);
+
+            // Set old island to trash
+            oldIsland.setDoNotLoad(true);
+
+            // Put old island into trash
+            quarantineCache.computeIfAbsent(target, k -> new ArrayList<>()).add(oldIsland);
+            // Save old island
+            if (!handler.saveObject(oldIsland)) {
+                plugin.logError("Could not save trashed island in database");
+                return false;
+            }
+        }
+        // Restore island from trash
+        island.setDoNotLoad(false);
+        // Add new island to cache
+        if (!islandCache.addIsland(island)) {
+            plugin.logError("Could not add recovered island to cache");
+            return false;
+        }
+        // Save new island
+        if (!handler.saveObject(island)) {
+            plugin.logError("Could not save recovered island to database");
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Resets all flags to gamemode config.yml default
+     * @param world - world
+     * @since 1.3.0
+     */
+    public void resetAllFlags(World world) {
+        islandCache.resetAllFlags(world);
+        this.saveAll();
+    }
 }

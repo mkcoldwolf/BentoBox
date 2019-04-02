@@ -18,20 +18,14 @@ import world.bentobox.bentobox.managers.RanksManager;
  */
 @StoreAt(filename="config.yml") // Explicitly call out what name this should have.
 @ConfigComment("BentoBox Configuration [version]")
-@ConfigComment("This config file is dynamic and saved when the server is shutdown.")
-@ConfigComment("You cannot edit it while the server is running because changes will")
-@ConfigComment("be lost! Use in-game settings GUI or edit when server is offline.")
+@ConfigComment("This config file is dynamic and is updated right after BentoBox loaded its settings from it.")
+@ConfigComment("You can edit it while the server is online and you can do '/bbox reload' to take the changes into account.")
+@ConfigComment("However, it is a better practice to edit this file while the server is offline.")
 public class Settings implements DataObject {
 
     // ---------------------------------------------
 
     /*      GENERAL     */
-    @ConfigComment("BentoBox uses bStats.org to get global data about the plugin to help improving it.")
-    @ConfigComment("bStats has nearly no effect on your server's performance and the sent data is completely")
-    @ConfigComment("anonymous so please consider twice if you really want to disable it.")
-    @ConfigEntry(path = "general.metrics")
-    private boolean metrics = true;
-
     @ConfigComment("Default language for new players.")
     @ConfigComment("This is the filename in the locale folder without .yml.")
     @ConfigComment("If this does not exist, the default en-US will be used.")
@@ -49,7 +43,7 @@ public class Settings implements DataObject {
     @ConfigComment("MYSQL might not work with all implementations: if available, use a dedicated database type (e.g. MARIADB).")
     @ConfigComment("If you use MONGODB, you must also run the BSBMongo plugin (not addon).")
     @ConfigComment("See https://github.com/tastybento/bsbMongo/releases/.")
-    @ConfigEntry(path = "general.database.type")
+    @ConfigEntry(path = "general.database.type", needsReset = true)
     private DatabaseType databaseType = DatabaseType.YAML;
 
     @ConfigEntry(path = "general.database.host")
@@ -167,6 +161,41 @@ public class Settings implements DataObject {
     @ConfigComment("who's been member of the island the longest time.")
     @ConfigEntry(path = "island.automated-ownership-transfer.ignore-ranks", hidden = true)
     private boolean autoOwnershipTransferIgnoreRanks = false;
+
+    /* WEB */
+    @ConfigComment("BentoBox uses bStats.org to get global data about the plugin to help improving it.")
+    @ConfigComment("bStats has nearly no effect on your server's performance and the sent data is completely")
+    @ConfigComment("anonymous so please consider twice if you really want to disable it.")
+    @ConfigEntry(path = "web.metrics")
+    private boolean metrics = true;
+
+    @ConfigComment("Toggle whether BentoBox can connect to GitHub to get data about updates and addons.")
+    @ConfigComment("Disabling this will result in the deactivation of the update checker and of some other")
+    @ConfigComment("features that rely on the data downloaded from the GitHub API.")
+    @ConfigComment("It does not send any data.")
+    @ConfigEntry(path = "web.github.download-data", since = "1.3.0", hidden = true)
+    private boolean githubDownloadData = false; // Set as false for now so it disables the whole GitHub thing.
+
+    @ConfigComment("Time in minutes between each connection to the GitHub API.")
+    @ConfigComment("This allows for up-to-the-minute information gathering.")
+    @ConfigComment("However, as the GitHub API data does not get updated instantly, it is recommended to keep")
+    @ConfigComment("this value greater than 15 minutes.")
+    @ConfigComment("Setting this to 0 will make BentoBox download data only at startup.")
+    @ConfigEntry(path = "web.github.connection-interval", since = "1.3.0", hidden = true)
+    private int githubConnectionInterval = 60;
+
+    @ConfigComment("Toggle whether the downloaded data should be flushed to files.")
+    @ConfigComment("It helps to prevent previously downloaded data being lost due to a more recent connection that failed")
+    @ConfigComment("to connect to the GitHub API.")
+    @ConfigComment("Such files are stored in JSON format and do not usually take up more than a few kilobytes of disk space each.")
+    @ConfigEntry(path = "web.github.flush-data-to-files", since = "1.3.0", hidden = true)
+    private boolean githubFlushDataToFiles = true;
+
+    @ConfigEntry(path = "web.updater.check-updates.bentobox", since = "1.3.0", hidden = true)
+    private boolean checkBentoBoxUpdates = true;
+
+    @ConfigEntry(path = "web.updater.check-updates.addons", since = "1.3.0", hidden = true)
+    private boolean checkAddonsUpdates = true;
 
     //---------------------------------------------------------------------------------------/
     @ConfigComment("These settings should not be edited")
@@ -443,5 +472,45 @@ public class Settings implements DataObject {
 
     public void setResetCooldownOnCreate(boolean resetCooldownOnCreate) {
         this.resetCooldownOnCreate = resetCooldownOnCreate;
+    }
+
+    public boolean isGithubDownloadData() {
+        return githubDownloadData;
+    }
+
+    public void setGithubDownloadData(boolean githubDownloadData) {
+        this.githubDownloadData = githubDownloadData;
+    }
+
+    public int getGithubConnectionInterval() {
+        return githubConnectionInterval;
+    }
+
+    public void setGithubConnectionInterval(int githubConnectionInterval) {
+        this.githubConnectionInterval = githubConnectionInterval;
+    }
+
+    public boolean isGithubFlushDataToFiles() {
+        return githubFlushDataToFiles;
+    }
+
+    public void setGithubFlushDataToFiles(boolean githubFlushDataToFiles) {
+        this.githubFlushDataToFiles = githubFlushDataToFiles;
+    }
+
+    public boolean isCheckBentoBoxUpdates() {
+        return checkBentoBoxUpdates;
+    }
+
+    public void setCheckBentoBoxUpdates(boolean checkBentoBoxUpdates) {
+        this.checkBentoBoxUpdates = checkBentoBoxUpdates;
+    }
+
+    public boolean isCheckAddonsUpdates() {
+        return checkAddonsUpdates;
+    }
+
+    public void setCheckAddonsUpdates(boolean checkAddonsUpdates) {
+        this.checkAddonsUpdates = checkAddonsUpdates;
     }
 }

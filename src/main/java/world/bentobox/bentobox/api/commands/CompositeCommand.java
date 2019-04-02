@@ -18,9 +18,9 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginIdentifiableCommand;
 import org.bukkit.entity.Player;
-
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.Settings;
 import world.bentobox.bentobox.api.addons.Addon;
@@ -241,8 +241,14 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
         if (event.isCancelled()) {
             return false;
         }
+        // Set the user's addon context
+        user.setAddon(addon);
         // Execute and trim args
-        return cmd.execute(user, (cmd.subCommandLevel > 0) ? args[cmd.subCommandLevel-1] : label, Arrays.asList(args).subList(cmd.subCommandLevel, args.length));
+
+        String cmdLabel = (cmd.subCommandLevel > 0) ? args[cmd.subCommandLevel-1] : label;
+        List<String> cmdArgs = Arrays.asList(args).subList(cmd.subCommandLevel, args.length);
+
+        return cmd.canExecute(user, cmdLabel, cmdArgs) && cmd.execute(user, cmdLabel, cmdArgs);
     }
 
     /**

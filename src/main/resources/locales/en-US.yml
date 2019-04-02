@@ -13,6 +13,7 @@ meta:
 
 general:
   success: "&aSuccess!"
+  invalid: "Invalid"
   errors:
     command-cancelled: "&cCommand cancelled."
     no-permission: "&cYou don't have the permission to execute this command (&7[permission]&c)."
@@ -73,6 +74,7 @@ commands:
         parameters: "<team player>"
         description: "kick a player from a team"
         cannot-kick-owner: "&cYou cannot kick the owner. Kick members first."
+        not-in-team: "&cThis player is not in a team."
         admin-kicked: "&cThe admin kicked you from the team."
       setowner:
         parameters: "<player>"
@@ -110,6 +112,7 @@ commands:
       already-owned: "&cIsland is already owned by another player!"
       no-island-here: "&cThere is no island here. Confirm to make one."
       in-deletion: "&cThis island space is currently being deleted. Try later."
+      cannot-make-island: "&cAn island cannot be placed here, sorry. See console for possible errors."
     unregister:
       parameters: "<owner>"
       description: "unregister owner from island, but keep island blocks"
@@ -119,6 +122,7 @@ commands:
       description: "get info on where you are or player's island"
       no-island: "&cYou are not in an island right now..."
       title: "========== Island Info ============"
+      island-uuid: "UUID: [uuid]"
       owner: "Owner: [owner] ([uuid])"
       last-login: "Last login: [date]"
       deaths: "Deaths: [number]"
@@ -128,6 +132,7 @@ commands:
       team-member-format: "&b[name] [rank]"
       island-location: "Island location: [xyz]"
       island-coords: "Island coordinates: [xz1] to [xz2]"
+      islands-in-trash: "&dPlayer has islands in trash."
       protection-range: "Protection range: [range]"
       max-protection-range: "Largest historical protection range: [range]"
       protection-coords: "Protection coordinates: [xz1] to [xz2]"
@@ -135,6 +140,23 @@ commands:
       banned-players: "Banned players:"
       banned-format: "&c[name]"
       unowned: "&cUnowned"
+    switchto:
+      parameters: "<player> <number>"
+      description: "switch player's island to the numbered one in trash"
+      out-of-range: "&cNumber must be between 1 and [number]. Use &l[label] trash [player] &r&cto see island numbers"
+      cannot-switch: "&cSwitch failed. See console log for error."   
+    trash:
+      no-unowned-in-trash: "&cNo unowned islands in trash"
+      no-islands-in-trash: "&cPlayer has no islands in trash"
+      parameters: "[player]"
+      description: "show unowned islands or player's islands in trash"
+      title: "&d=========== Islands in Trash ==========="
+      count: "&l&dIsland [number]:"
+      use-switch: "&aUse &l[label] switchto <player> <number>&r&a to switch player to island in trash"
+      use-emptytrash: "&aUse &l[label] emptytrash [player]&r&a to permanently remove trash items"
+    emptytrash:
+      parameters: "[player]"
+      description: "Clear trash for player, or all unowned islands in trash"
     version:
       description: "display BentoBox and addons versions"
     setrange:
@@ -181,6 +203,11 @@ commands:
       load:
         parameters: "<schem name>"
         description: "load schem into the clipboard"
+      list:
+        parameters: ""
+        description: "list available schems"
+        no-schems: "&cNo schems in schems folder!"
+        available-schems: "&aThese schems are available for loading:"
       origin:
         parameters: ""
         description: "set the schem's origin to your position"
@@ -196,10 +223,12 @@ commands:
       save:
         parameters: "<schem name>"
         description: "save the copied clipboard"      
+    resetflags:
+      description: "Reset all islands to default flag settings in config.yml"
     world:
       description: "Manage world settings"
     delete:
-      parameters: ""
+      parameters: "<player>"
       description: "deletes a player's island"
       cannot-delete-owner: "&cAll island members have to be kicked from the island before deleting it."
       deleted-island: "&aIsland at &e[xyz] &ahas been successfully deleted."
@@ -221,16 +250,18 @@ commands:
     about:
       description: "display copyright and license info"
     reload:
-      description: "reloads addons (if supported) and locale files"
+      description: "reloads settings, addons (if supported) and locales"
       locales-reloaded: "&2Languages reloaded."
       addons-reloaded: "&2Addons reloaded."
+      settings-reloaded: "&2Settings reloaded."
     version:
-      plugin-version: "&2BentoBox version: &3[name]"
-      description: "display info"
+      plugin-version: "&2BentoBox version: &3[version]"
+      description: "display BentoBox and addons versions"
       loaded-addons: "Loaded Addons:"
       loaded-game-worlds: "Loaded Game Worlds:"
       addon-syntax: "&2[name] &3[version]" 
       game-worlds: "&2[name] &3([addon])"
+      server: "&2Running &3[name] [version]&2."
   confirmation:
     confirm: "&cType command again within &b[seconds]s&c to confirm."
     previous-request-cancelled: "&6Previous confirmation request cancelled."
@@ -342,7 +373,7 @@ commands:
           name-joined-your-island: "&a[name] joined your island!"
           confirmation: |-
             &cAre you sure you want to accept this invite?
-            &c&lYou will &nLOSE &r&c&lyour current island!
+            &c&lYou will &nLOSE&r &c&lyour current island!
         reject:
           description: "reject an invitation"
           you-rejected-invite: "&aYou rejected the invitation to join an island."
@@ -402,6 +433,14 @@ commands:
       description: "display island settings"
     language:
       description: "select language"
+    expel:
+      description: "expel a player from your island"
+      parameters: "<player>"
+      cannot-expel-yourself: "&cYou cannot expel yourself!"
+      cannot-expel: "&cThat player cannot be expelled."
+      cannot-ban-member: "&cYou cannot expel a team member!"
+      not-on-island: "&cThat player is not on your island!"
+      player-expelled-you: "&b[name]&c expelled you from the island!"
 
 ranks:
   owner: "Owner"
@@ -436,6 +475,10 @@ protection:
       description: "Toggle interaction"
       name: "Beds"
       hint: "Bed use disabled"
+    BOAT:
+      name: "Boats"
+      description: "Toggle boats interactions"
+      hint: "No boat interaction allowed"
     BREAK_BLOCKS: 
       description: "Toggle breaking"
       name: "Break blocks"
@@ -492,9 +535,9 @@ protection:
       name: "Clean Super Flat"
     COARSE_DIRT_TILLING:
       description: |-
-          &aToggle tilling the
-          &acoarse dirt to
-          &aobtain dirt
+          &aToggle tilling coarse
+          &adirt and breaking podzol
+          &ato obtain dirt
       name: "Coarse dirt tilling"
       hint: "No coarse dirt tilling"
     COLLECT_LAVA: 
@@ -531,6 +574,14 @@ protection:
       description: "Toggle door usage"
       name: "Use doors"
       hint: "No door use"
+    DRAGON_EGG:
+      name: "Dragon Egg"
+      description: |-
+        &aPrevents interaction with Dragon Eggs.
+
+        &cThis does not protect it from being
+        &cplaced or broken.
+      hint: "No Dragon Egg interaction"
     EGGS: 
       description: "Toggle egg throwing"
       name: "Egg throwing"
@@ -568,24 +619,39 @@ protection:
       name: "Enter/Exit messages"
       now-entering: "&bNow entering [name]"
       now-leaving: "&bNow leaving [name]"
-    FIRE: 
-      description: "Allow fire to exist or not"
-      name: "Fire"
-      hint: "No fire allowed"
+    EXPERIENCE_BOTTLE_THROWING:
+      name: "Experience bottle throwing"
+      description: "Toggle throwing experience bottles."
+      hint: "Not allowed to throw experience bottles"
+    FIRE_BURNING:
+      name: "Fire burning"
+      description: |-
+        &aToggle whether fire can burn
+        &ablocks or not.
     FIRE_EXTINGUISH: 
-      description: "Toggle extinguishing"
+      description: "Toggle extinguishing fires"
       name: "Fire extinguish"
       hint: "No fire extinguishing allowed"
-    FIRE_SPREAD: 
-      description: "Toggle spread"
-      name: "Fire spread"
-      hint: "No fire spread allowed"
-    FISH_SCOOPING:
+    FIRE_IGNITE:
+      name: "Fire ignition"
       description: |-
-         &aAllow scooping of
-         &atropical fish
+        &aToggle whether fire can be ignited
+        &aby non-player means or not.
+    FIRE_SPREAD:
+      name: "Fire spread"
+      description: |-
+        &aToggle whether fire can spread
+        &ato nearby blocks or not.
+    FISH_SCOOPING:
       name: "Fish Scooping"
-      hint: "No scooping of tropical fish"
+      description: "Allow scooping of fishes using a bucket"
+      hint: "No scooping of fishes"
+    FLINT_AND_STEEL:
+      name: "Flint and steel"
+      description: |-
+        &aAllow players to ignite fires using
+        &aflint and steel or fire charges.
+      hint: "No flint and steel or fire charges usage"
     FURNACE: 
       description: "Toggle use"
       name: "Furnace"
@@ -612,6 +678,10 @@ protection:
       description: "Toggle hurting"
       name: "Hurt villagers"
       hint: "No villager hurting"
+    ITEM_FRAME:
+      name: "Item Frame"
+      description: "Toggle interaction"
+      hint: "Item Frame use disabled"
     ITEM_FRAME_DAMAGE:
       description: |-
           &aMobs can damage
@@ -640,6 +710,9 @@ protection:
       description: "Toggle usage"
       name: "Jukebox use"
       hint: "No jukebox use allowed"
+    LEAF_DECAY:
+      name: "Leaf decay"
+      description: "Allow leaves to naturally decay"
     LEASH: 
       description: "Toggle use"
       name: "Leash use"
@@ -647,6 +720,19 @@ protection:
       description: "Toggle use"
       name: "Lever use"
       hint: "No lever use"
+    LIQUIDS_FLOWING_OUT:
+      name: "Liquids flowing outside islands"
+      description: |-
+        &aToggle whether liquids can flow outside
+        &aof the island's protection range.
+        &aDisabling it helps avoiding lava and water
+        &agenerating cobblestone in the area between
+        &atwo islands.
+
+        &cNote that liquids will still flow vertically.
+        &cThey will also not spread horizontally if
+        &cthey are placed outside an island's
+        &cprotection range.
     LOCK: 
       description: "Toggle lock"
       name: "Lock island"
@@ -654,6 +740,10 @@ protection:
       description: "Toggle cow milking"
       name: "Milking"
       hint: "No milking allowed"
+    MINECART:
+      name: "Minecarts"
+      description: "Toggle minecart interactions"
+      hint: "No minecart interaction allowed"
     MONSTER_SPAWN: 
       description: "Toggle spawning"
       name: "Monster spawning"
@@ -667,6 +757,16 @@ protection:
       name: "Name tags"
       description: "Toggle use"
       hint: "No name tags use"
+    NATURAL_SPAWNING_OUTSIDE_RANGE:
+      name: "Natural creature spawning outside range"
+      description: |-
+        &aToggle whether creatures (animals and
+        &amonsters) can spawn naturally outside
+        &aan island's protection range.
+
+        &cNote that it doesn't prevent creatures
+        &cto spawn via a mob spawner or a spawn
+        &cegg.
     NOTE_BLOCK: 
       description: "Toggle use"
       name: "Note block"
@@ -674,10 +774,10 @@ protection:
     OBSIDIAN_SCOOPING:
       name: "Obsidian scooping"
       description: | 
-        Toggle scooping
-        Allow obsidian to be scooped up
-        with an empty bucket back into lava.
-        Protects newbies. Reduces resets.
+        &aToggle scooping
+        &aAllow obsidian to be scooped up
+        &awith an empty bucket back into lava.
+        &aProtects newbies. Reduces resets.
     OFFLINE_REDSTONE:
       description: |-
           &aWhen disabled, redstone
@@ -698,8 +798,7 @@ protection:
       name: "Potion throwing"
       description: |-
         &aToggle throwing potions.
-        &aThis include splash and lingering
-        &apotions and experience bottles.
+        &aThis include splash and lingering potions.
       hint: "Not allowed to throw potions"
     NETHER_PORTAL:
       description: "Toggle use"
@@ -736,15 +835,21 @@ protection:
       description: "Toggle use"
       name: "Redstone items"
       hint: "No redstone item use"
-    RIDING: 
-      description: "Toggle riding"
-      name: "Animal riding"
-      hint: "No animal riding allowed"
+    REMOVE_END_EXIT_ISLAND:
+      description: |-
+        &aPrevents the end exit
+        &aisland from generating
+        &aat coordinates 0,0
+      name: "Remove end exit island"
     REMOVE_MOBS: 
       description: |-
         &aRemove monsters when
         &ateleporting to island
       name: "Remove monsters"
+    RIDING: 
+      description: "Toggle riding"
+      name: "Animal riding"
+      hint: "No animal riding allowed"
     SHEARING: 
       description: "Toggle shearing"
       name: "Shearing"
@@ -764,6 +869,16 @@ protection:
       description: "Toggle access"
       name: "Trap doors"
       hint: "No trapdoor use"
+    TREES_GROWING_OUTSIDE_RANGE:
+      name: "Trees growing outside range"
+      description: |-
+        &aToggle whether trees can grow outside an
+        &aisland's protection range or not.
+        &aNot only will it prevent saplings placed
+        &aoutside an island's protection range from
+        &agrowing, but it will also block generation
+        &aof leaves/logs outside of the island, thus
+        &acutting the tree.
     TURTLE_EGGS:
       description: "Toggle crushing"
       name: "Turtle Eggs"

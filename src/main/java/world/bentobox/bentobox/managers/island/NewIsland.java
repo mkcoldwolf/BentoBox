@@ -10,8 +10,8 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
 import org.bukkit.util.Vector;
-
 import org.eclipse.jdt.annotation.Nullable;
+
 import world.bentobox.bentobox.BStats;
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.events.IslandBaseEvent;
@@ -119,6 +119,10 @@ public class NewIsland {
             return this;
         }
 
+        /**
+         * @return Island
+         * @throws IOException - if there are insufficient parameters defined
+         */
         public Island build() throws IOException {
             if (user2 != null) {
                 NewIsland newIsland = new NewIsland(oldIsland2, user2, reason2, world2, name2, noPaste2);
@@ -149,7 +153,7 @@ public class NewIsland {
         plugin.getPlayers().clearHomeLocations(world, user.getUniqueId());
 
         // Set home location
-        plugin.getPlayers().setHomeLocation(user, next, 1);
+        plugin.getPlayers().setHomeLocation(user, new Location(next.getWorld(), next.getX() + 0.5D, next.getY(), next.getZ() + 0.5D), 1);
 
         // Save the player so that if the server crashes weird things won't happen
         plugin.getPlayers().save(user.getUniqueId());

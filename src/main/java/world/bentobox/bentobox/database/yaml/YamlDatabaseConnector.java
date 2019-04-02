@@ -14,8 +14,13 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.Connection;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Scanner;
+import java.util.UUID;
 
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
@@ -104,10 +109,8 @@ public class YamlDatabaseConnector implements DatabaseConnector {
                 line = line.replace("!!java.util.UUID", "");
                 writer.println(line);
             }
-            if (yamlFile.delete()) {
-                if (!temp.renameTo(yamlFile)) {
-                    plugin.logError("Could not rename fixed Island object. Are the writing permissions correctly setup?");
-                }
+            if (yamlFile.delete() && !temp.renameTo(yamlFile)) {
+                plugin.logError("Could not rename fixed Island object. Are the writing permissions correctly setup?");
             }
         } catch (Exception e) {
             plugin.logError("Could not fix Island object - skipping - " + e.getMessage());

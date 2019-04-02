@@ -215,6 +215,16 @@ public class UserTest {
         assertTrue(user.hasPermission("perm"));
     }
 
+    /**
+     * Asserts that {@link User#hasPermission(String)} returns true when the user is op.
+     * @since 1.3.0
+     */
+    @Test
+    public void testHasNotPermissionButIsOp() {
+        when(user.isOp()).thenReturn(true);
+        assertTrue(user.hasPermission(""));
+    }
+
     @Test
     public void testIsOnline() {
         when(player.isOnline()).thenReturn(true);
@@ -261,6 +271,8 @@ public class UserTest {
         GameModeAddon addon = mock(GameModeAddon.class);
         AddonDescription desc = new AddonDescription.Builder("mock", "name", "1.0").build();
         when(addon.getDescription()).thenReturn(desc);
+        // Set addon context
+        user.setAddon(addon);
         Optional<GameModeAddon> optionalAddon = Optional.of(addon);
         when(iwm .getAddon(any())).thenReturn(optionalAddon);
         when(lm.get(any(), Mockito.eq("name.a.reference"))).thenReturn("mockmockmock");
@@ -419,4 +431,67 @@ public class UserTest {
         assertNull(user);
     }
 
+    /**
+     * Test for {@link User#getPermissionValue(String, int)}
+     */
+    @Test
+    public void testGetPermissionValue() {
+        User.clearUsers();
+        Set<PermissionAttachmentInfo> permSet = new HashSet<>();
+        PermissionAttachmentInfo pai = mock(PermissionAttachmentInfo.class);
+        when(pai.getPermission()).thenReturn("bskyblock.max.3");
+        PermissionAttachmentInfo pai2 = mock(PermissionAttachmentInfo.class);
+        when(pai2.getPermission()).thenReturn("bskyblock.max.7");
+        PermissionAttachmentInfo pai3 = mock(PermissionAttachmentInfo.class);
+        when(pai3.getPermission()).thenReturn("bskyblock.max.33");
+        permSet.add(pai);
+        permSet.add(pai2);
+        permSet.add(pai3);
+        when(player.getEffectivePermissions()).thenReturn(permSet);
+        User u = User.getInstance(player);
+        assertEquals(33, u.getPermissionValue("bskyblock.max", 2));
+    }
+    
+    
+    /**
+     * Test for {@link User#getPermissionValue(String, int)}
+     */
+    @Test
+    public void testGetPermissionValueNegative() {
+        User.clearUsers();
+        Set<PermissionAttachmentInfo> permSet = new HashSet<>();
+        PermissionAttachmentInfo pai = mock(PermissionAttachmentInfo.class);
+        when(pai.getPermission()).thenReturn("bskyblock.max.3");
+        PermissionAttachmentInfo pai2 = mock(PermissionAttachmentInfo.class);
+        when(pai2.getPermission()).thenReturn("bskyblock.max.7");
+        PermissionAttachmentInfo pai3 = mock(PermissionAttachmentInfo.class);
+        when(pai3.getPermission()).thenReturn("bskyblock.max.-1");
+        permSet.add(pai);
+        permSet.add(pai2);
+        permSet.add(pai3);
+        when(player.getEffectivePermissions()).thenReturn(permSet);
+        User u = User.getInstance(player);
+        assertEquals(-1, u.getPermissionValue("bskyblock.max", 2));
+    }
+    
+    /**
+     * Test for {@link User#getPermissionValue(String, int)}
+     */
+    @Test
+    public void testGetPermissionValueStar() {
+        User.clearUsers();
+        Set<PermissionAttachmentInfo> permSet = new HashSet<>();
+        PermissionAttachmentInfo pai = mock(PermissionAttachmentInfo.class);
+        when(pai.getPermission()).thenReturn("bskyblock.max.3");
+        PermissionAttachmentInfo pai2 = mock(PermissionAttachmentInfo.class);
+        when(pai2.getPermission()).thenReturn("bskyblock.max.7");
+        PermissionAttachmentInfo pai3 = mock(PermissionAttachmentInfo.class);
+        when(pai3.getPermission()).thenReturn("bskyblock.max.*");
+        permSet.add(pai);
+        permSet.add(pai2);
+        permSet.add(pai3);
+        when(player.getEffectivePermissions()).thenReturn(permSet);
+        User u = User.getInstance(player);
+        assertEquals(22, u.getPermissionValue("bskyblock.max", 22));
+    }
 }

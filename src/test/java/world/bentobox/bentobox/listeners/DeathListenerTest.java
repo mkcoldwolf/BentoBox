@@ -1,6 +1,5 @@
 package world.bentobox.bentobox.listeners;
 
-import static org.junit.Assert.assertNotNull;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -70,20 +69,13 @@ public class DeathListenerTest {
 
     }
 
-
-    @Test
-    public void testDeathListener() {
-        assertNotNull(new DeathListener(mock(BentoBox.class)));
-    }
-
     @Test
     public void testOnPlayerDeathEventDeathsCounted() {
-
         // Test
         DeathListener dl = new DeathListener(plugin);
 
         PlayerDeathEvent e = new PlayerDeathEvent(player, new ArrayList<>(), 0, 0, 0, 0, "died");
-        dl.onPlayerDeathEvent(e);
+        dl.onPlayerDeath(e);
         Mockito.verify(pm).addDeath(world, uuid);
     }
 
@@ -94,7 +86,7 @@ public class DeathListenerTest {
         DeathListener dl = new DeathListener(plugin);
 
         PlayerDeathEvent e = new PlayerDeathEvent(player, new ArrayList<>(), 0, 0, 0, 0, "died");
-        dl.onPlayerDeathEvent(e);
+        dl.onPlayerDeath(e);
         Mockito.verify(pm, Mockito.never()).addDeath(world, uuid);
     }
 
@@ -105,7 +97,7 @@ public class DeathListenerTest {
         DeathListener dl = new DeathListener(plugin);
 
         PlayerDeathEvent e = new PlayerDeathEvent(player, new ArrayList<>(), 0, 0, 0, 0, "died");
-        dl.onPlayerDeathEvent(e);
+        dl.onPlayerDeath(e);
         Mockito.verify(pm, Mockito.never()).addDeath(world, uuid);
     }
 

@@ -2,6 +2,7 @@ package world.bentobox.bentobox;
 
 import java.util.Optional;
 
+import org.apache.commons.lang.exception.ExceptionUtils;
 import org.bukkit.Bukkit;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.PluginManager;
@@ -22,11 +23,14 @@ import world.bentobox.bentobox.listeners.BannedVisitorCommands;
 import world.bentobox.bentobox.listeners.BlockEndDragon;
 import world.bentobox.bentobox.listeners.DeathListener;
 import world.bentobox.bentobox.listeners.JoinLeaveListener;
-import world.bentobox.bentobox.listeners.NetherPortals;
+import world.bentobox.bentobox.listeners.NetherTreesListener;
 import world.bentobox.bentobox.listeners.PanelListenerManager;
+import world.bentobox.bentobox.listeners.PortalTeleportationListener;
+import world.bentobox.bentobox.listeners.StandardSpawnProtectionListener;
 import world.bentobox.bentobox.managers.AddonsManager;
 import world.bentobox.bentobox.managers.CommandsManager;
 import world.bentobox.bentobox.managers.FlagsManager;
+import world.bentobox.bentobox.managers.GameModePlaceholderManager;
 import world.bentobox.bentobox.managers.HooksManager;
 import world.bentobox.bentobox.managers.IslandDeletionManager;
 import world.bentobox.bentobox.managers.IslandWorldManager;
@@ -36,6 +40,7 @@ import world.bentobox.bentobox.managers.PlaceholdersManager;
 import world.bentobox.bentobox.managers.PlayersManager;
 import world.bentobox.bentobox.managers.RanksManager;
 import world.bentobox.bentobox.managers.SchemsManager;
+import world.bentobox.bentobox.managers.WebManager;
 import world.bentobox.bentobox.util.heads.HeadGetter;
 import world.bentobox.bentobox.versions.ServerCompatibility;
 
@@ -61,6 +66,7 @@ public class BentoBox extends JavaPlugin {
     private HooksManager hooksManager;
     private PlaceholdersManager placeholdersManager;
     private IslandDeletionManager islandDeletionManager;
+    private WebManager webManager;
 
     // Settings
     private Settings settings;
@@ -80,13 +86,10 @@ public class BentoBox extends JavaPlugin {
     public void onEnable(){
         if (!ServerCompatibility.getInstance().checkCompatibility(this).isCanLaunch()) {
             // The server's most likely incompatible.
-            // For safety reasons, we must stop BentoBox from loading.
-
-            getServer().getLogger().severe("Aborting BentoBox enabling.");
-            getServer().getLogger().severe("BentoBox cannot be loaded on this server.");
-            getServer().getLogger().severe("You must use a compatible server software (Spigot) and run on a supported version (1.13.2).");
-
-            getServer().getPluginManager().disablePlugin(this);
+            // Show a warning
+            getServer().getLogger().warning("************ Disclaimer **************");
+            getServer().getLogger().warning("BentoBox may not be compatible with this server!");
+            getServer().getLogger().warning("BentoBox is tested only on the latest version of Spigot.");
             return;
         }
 
@@ -101,14 +104,13 @@ public class BentoBox extends JavaPlugin {
         // Load Flags
         flagsManager = new FlagsManager(this);
 
-        // Load settings from config.yml. This will check if there are any issues with it too.
-        settings = new Config<>(this, Settings.class).loadConfigObject("");
-        if (settings == null) {
-            // Settings did no load correctly. Disable plugin.
-            logError("Settings did not load correctly - disabling plugin - please check config.yml");
-            getPluginLoader().disablePlugin(this);
+        if (!loadSettings()) {
+            // We're aborting the load.
             return;
         }
+        // Saving the config now.
+        new Config<>(this, Settings.class).saveConfigObject(settings);
+
         // Start Database managers
         playersManager = new PlayersManager(this);
         // Check if this plugin is now disabled (due to bad database handling)
@@ -142,12 +144,18 @@ public class BentoBox extends JavaPlugin {
         hooksManager = new HooksManager(this);
         hooksManager.registerHook(new VaultHook());
         hooksManager.registerHook(new PlaceholderAPIHook());
+        // Setup the Placeholders manager
+        placeholdersManager = new PlaceholdersManager(this);
 
         // Load addons. Addons may load worlds, so they must go before islands are loaded.
         addonsManager = new AddonsManager(this);
         addonsManager.loadAddons();
         // Enable addons
         addonsManager.enableAddons();
+        
+        // Register default gamemode placeholders
+        GameModePlaceholderManager gmp = new GameModePlaceholderManager(this);
+        addonsManager.getGameModeAddons().forEach(gmp::registerGameModePlaceholders);
 
         getServer().getScheduler().runTask(instance, () -> {
             // Register Listeners
@@ -176,8 +184,8 @@ public class BentoBox extends JavaPlugin {
             hooksManager.registerHook(new MultiverseCoreHook());
             islandWorldManager.registerWorldsToMultiverse();
 
-            // Setup the Placeholders manager
-            placeholdersManager = new PlaceholdersManager(this);
+            webManager = new WebManager(this);
+            webManager.requestGitHubData();
 
             // Show banner
             User.getInstance(Bukkit.getConsoleSender()).sendMessage("successfully-loaded",
@@ -191,7 +199,7 @@ public class BentoBox extends JavaPlugin {
     }
 
     /**
-     * Register listeners
+     * Registers listeners.
      */
     private void registerListeners() {
         PluginManager manager = getServer().getPluginManager();
@@ -199,8 +207,12 @@ public class BentoBox extends JavaPlugin {
         manager.registerEvents(new JoinLeaveListener(this), this);
         // Panel listener manager
         manager.registerEvents(new PanelListenerManager(), this);
+        // Standard Nether/End spawns protection
+        manager.registerEvents(new StandardSpawnProtectionListener(this), this);
         // Nether portals
-        manager.registerEvents(new NetherPortals(this), this);
+        manager.registerEvents(new PortalTeleportationListener(this), this);
+        // Nether trees conversion
+        manager.registerEvents(new NetherTreesListener(this), this);
         // End dragon blocking
         manager.registerEvents(new BlockEndDragon(this), this);
         // Banned visitor commands
@@ -223,10 +235,6 @@ public class BentoBox extends JavaPlugin {
         }
         if (islandsManager != null) {
             islandsManager.shutdown();
-        }
-        // Save settings - ensures admins always have the latest config file
-        if (settings != null) {
-            new Config<>(this, Settings.class).saveConfigObject(settings);
         }
     }
 
@@ -304,6 +312,25 @@ public class BentoBox extends JavaPlugin {
     }
 
     /**
+     * Loads the settings from the config file.
+     * If it fails, it can shut the plugin down.
+     * @return {@code true} if it loaded successfully.
+     * @since 1.3.0
+     */
+    public boolean loadSettings() {
+        log("Loading Settings from config.yml...");
+        // Load settings from config.yml. This will check if there are any issues with it too.
+        settings = new Config<>(this, Settings.class).loadConfigObject();
+        if (settings == null) {
+            // Settings did not load correctly. Disable plugin.
+            logError("Settings did not load correctly - disabling plugin - please check config.yml");
+            getPluginLoader().disablePlugin(this);
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * @return the notifier
      */
     public Notifier getNotifier() {
@@ -327,6 +354,16 @@ public class BentoBox extends JavaPlugin {
 
     public void logError(String error) {
         getLogger().severe(() -> error);
+    }
+
+    /**
+     * Logs the stacktrace of a Throwable that was thrown by an error.
+     * It should be used preferably instead of {@link Throwable#printStackTrace()} as it does not risk exposing sensitive information.
+     * @param throwable the Throwable that was thrown by an error.
+     * @since 1.3.0
+     */
+    public void logStacktrace(@NonNull Throwable throwable) {
+        logError(ExceptionUtils.getStackTrace(throwable));
     }
 
     public void logWarning(String warning) {
@@ -388,11 +425,21 @@ public class BentoBox extends JavaPlugin {
         return Optional.ofNullable(metrics);
     }
 
+    // Overriding default JavaPlugin methods
+
     /* (non-Javadoc)
      * @see org.bukkit.plugin.java.JavaPlugin#getDefaultWorldGenerator(java.lang.String, java.lang.String)
      */
     @Override
     public ChunkGenerator getDefaultWorldGenerator(String worldName, String id) {
         return addonsManager.getDefaultWorldGenerator(worldName, id);
+    }
+
+    /* (non-Javadoc)
+     * @see org.bukkit.plugin.java.JavaPlugin#reloadConfig()
+     */
+    @Override
+    public void reloadConfig() {
+        loadSettings();
     }
 }

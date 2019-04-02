@@ -5,14 +5,16 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Server;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.bukkit.util.Vector;
 import org.junit.Before;
@@ -25,6 +27,7 @@ import org.powermock.modules.junit4.PowerMockRunner;
 import org.powermock.reflect.Whitebox;
 
 import world.bentobox.bentobox.BentoBox;
+import world.bentobox.bentobox.Settings;
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
@@ -61,6 +64,11 @@ public class AdminUnregisterCommandTest {
         // Command manager
         CommandsManager cm = mock(CommandsManager.class);
         when(plugin.getCommandsManager()).thenReturn(cm);
+
+        // Settings
+        Settings s = mock(Settings.class);
+        when(s.getResetCooldown()).thenReturn(0);
+        when(plugin.getSettings()).thenReturn(s);
 
         // Player
         Player p = mock(Player.class);
@@ -109,6 +117,13 @@ public class AdminUnregisterCommandTest {
         LocalesManager lm = mock(LocalesManager.class);
         when(lm.get(Mockito.any(), Mockito.any())).thenReturn("mock translation");
         when(plugin.getLocalesManager()).thenReturn(lm);
+
+        // Plugin Manager
+        Server server = mock(Server.class);
+        PluginManager pim = mock(PluginManager.class);
+        when(server.getPluginManager()).thenReturn(pim);
+        when(Bukkit.getServer()).thenReturn(server);
+
     }
 
 
@@ -118,7 +133,7 @@ public class AdminUnregisterCommandTest {
     @Test
     public void testExecuteNoTarget() {
         AdminUnregisterCommand itl = new AdminUnregisterCommand(ac);
-        assertFalse(itl.execute(user, itl.getLabel(), new ArrayList<>()));
+        assertFalse(itl.canExecute(user, itl.getLabel(), Collections.emptyList()));
         // Show help
     }
 
@@ -130,7 +145,7 @@ public class AdminUnregisterCommandTest {
         AdminUnregisterCommand itl = new AdminUnregisterCommand(ac);
         String[] name = {"tastybento"};
         when(pm.getUUID(Mockito.any())).thenReturn(null);
-        assertFalse(itl.execute(user, itl.getLabel(), Arrays.asList(name)));
+        assertFalse(itl.canExecute(user, itl.getLabel(), Arrays.asList(name)));
         Mockito.verify(user).sendMessage("general.errors.unknown-player", "[name]", name[0]);
     }
 
@@ -143,7 +158,7 @@ public class AdminUnregisterCommandTest {
         String[] name = {"tastybento"};
         when(pm.getUUID(Mockito.any())).thenReturn(notUUID);
         when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
-        assertFalse(itl.execute(user, itl.getLabel(), Arrays.asList(name)));
+        assertFalse(itl.canExecute(user, itl.getLabel(), Arrays.asList(name)));
         Mockito.verify(user).sendMessage(Mockito.eq("general.errors.player-has-no-island"));
     }
 
@@ -164,8 +179,7 @@ public class AdminUnregisterCommandTest {
         AdminUnregisterCommand itl = new AdminUnregisterCommand(ac);
         assertTrue(itl.execute(user, itl.getLabel(), Arrays.asList(name)));
         // Add other verifications
-        Mockito.verify(user).sendMessage("commands.admin.unregister.unregistered-island", "[xyz]", "123,123,432");
-        Mockito.verify(user).sendMessage(Mockito.eq("general.success"));
+        Mockito.verify(user).sendMessage("commands.confirmation.confirm", "[seconds]", "0");
     }
 
 }

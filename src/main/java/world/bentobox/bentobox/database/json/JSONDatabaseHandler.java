@@ -58,6 +58,8 @@ public class JSONDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
                 list.add(getGson().fromJson(new FileReader(file), dataObject));
             } catch (FileNotFoundException e) {
                 plugin.logError("Could not load file '" + file.getName() + "': File not found.");
+            } catch (Exception e) {
+                plugin.logError("Could not load objects " + file.getName() + " " + e.getMessage());
             }
         }
         return list;
@@ -78,6 +80,8 @@ public class JSONDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
             result = getGson().fromJson(new FileReader(new File(plugin.getDataFolder(), fileName)), dataObject);
         } catch (FileNotFoundException e) {
             plugin.logError("Could not load file '" + fileName + "': File not found.");
+        } catch (Exception e) {
+            plugin.logError("Could not load objects " + fileName + " " + e.getMessage());
         }
 
         return result;
@@ -123,7 +127,7 @@ public class JSONDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
     }
 
     @Override
-    public boolean deleteID(String uniqueId) {
+    public void deleteID(String uniqueId) {
         // The filename of the JSON file is the value of uniqueId field plus .json. Sometimes the .json is already appended.
         if (!uniqueId.endsWith(JSON)) {
             uniqueId = uniqueId + JSON;
@@ -136,12 +140,10 @@ public class JSONDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
             File file = new File(tableFolder, uniqueId);
             try {
                 Files.delete(file.toPath());
-                return true;
             } catch (IOException e) {
                 plugin.logError("Could not delete json database object! " + file.getName() + " - " + e.getMessage());
             }
         }
-        return false;
     }
 
     @Override

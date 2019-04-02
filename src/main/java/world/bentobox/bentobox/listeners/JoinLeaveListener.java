@@ -6,16 +6,20 @@ import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.World;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.eclipse.jdt.annotation.NonNull;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
+import world.bentobox.bentobox.database.objects.Players;
 import world.bentobox.bentobox.lists.Flags;
 import world.bentobox.bentobox.managers.PlayersManager;
 import world.bentobox.bentobox.managers.RanksManager;
@@ -29,16 +33,13 @@ public class JoinLeaveListener implements Listener {
     /**
      * @param plugin - plugin object
      */
-    public JoinLeaveListener(BentoBox plugin) {
+    public JoinLeaveListener(@NonNull BentoBox plugin) {
         this.plugin = plugin;
         players = plugin.getPlayers();
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onPlayerJoin(final PlayerJoinEvent event) {
-        if (event.getPlayer() == null) {
-            return;
-        }
         User user = User.getInstance(event.getPlayer());
         if (user.getUniqueId() == null) {
             return;
@@ -72,8 +73,48 @@ public class JoinLeaveListener implements Listener {
             if (plugin.getIWM().inWorld(user.getLocation()) && Flags.REMOVE_MOBS.isSetForWorld(user.getWorld())) {
                 plugin.getIslands().clearArea(user.getLocation());
             }
+
+            // Clear inventory if required
+            clearPlayersInventory(Util.getWorld(event.getPlayer().getWorld()), User.getInstance(event.getPlayer()));
         }
     }
+
+
+    /**
+     * This event will clean players inventor
+     * @param event SwitchWorld event.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerSwitchWorld(final PlayerChangedWorldEvent event) {
+        // Clear inventory if required
+        clearPlayersInventory(Util.getWorld(event.getPlayer().getWorld()), User.getInstance(event.getPlayer()));
+    }
+
+
+    /**
+     * This method clears player inventory and ender chest if given world is quarantined
+     * in user data file and it is required by plugin settings.
+     * @param world World where cleaning must occur.
+     * @param user Targeted user.
+     */
+    private void clearPlayersInventory(World world, @NonNull User user) {
+        // Clear inventory if required
+        Players playerData = players.getPlayer(user.getUniqueId());
+
+        if (!playerData.getPendingKicks().isEmpty() && playerData.getPendingKicks().contains(world.getName())) {
+            if (plugin.getIWM().isOnLeaveResetEnderChest(world)) {
+                user.getPlayer().getEnderChest().clear();
+            }
+
+            if (plugin.getIWM().isOnLeaveResetInventory(world)) {
+                user.getPlayer().getInventory().clear();
+            }
+
+            playerData.getPendingKicks().remove(world.getName());
+            players.save(user.getUniqueId());
+        }
+    }
+
 
     private void runAutomatedOwnershipTransfer(User user) {
         plugin.getIWM().getOverWorlds().stream()
@@ -110,18 +151,18 @@ public class JoinLeaveListener implements Listener {
         .filter(world -> plugin.getIslands().isOwner(world, user.getUniqueId()))
         .forEach(world -> {
             Island island = plugin.getIslands().getIsland(world, user);
+            if (island != null) {
+                // Check if new owner has a different range permission than the island size
+                int range = user.getPermissionValue(plugin.getIWM().getAddon(island.getWorld()).get().getPermissionPrefix() + "island.range", island.getProtectionRange());
 
-            // Check if new owner has a different range permission than the island size
-            int range = user.getPermissionValue(plugin.getIWM().getAddon(island.getWorld()).get().getPermissionPrefix() + "island.range", plugin.getIWM().getIslandProtectionRange(Util.getWorld(island.getWorld())));
-
-            // Range can go up or down
-            if (range != island.getProtectionRange()) {
-                user.sendMessage("commands.admin.setrange.range-updated", TextVariables.NUMBER, String.valueOf(range));
-                plugin.log("Island protection range changed from " + island.getProtectionRange() + " to "
-                        + range + " for " + user.getName() + " due to permission.");
+                // Range can go up or down
+                if (range != island.getProtectionRange()) {
+                    user.sendMessage("commands.admin.setrange.range-updated", TextVariables.NUMBER, String.valueOf(range));
+                    plugin.log("Island protection range changed from " + island.getProtectionRange() + " to "
+                            + range + " for " + user.getName() + " due to permission.");
+                }
+                island.setProtectionRange(range);
             }
-
-            island.setProtectionRange(range);
         });
     }
 
@@ -131,7 +172,7 @@ public class JoinLeaveListener implements Listener {
         plugin.getIWM().getOverWorlds().forEach(w -> {
             Island island = plugin.getIslands().getIsland(w, User.getInstance(event.getPlayer()));
             // Are there any online players still for this island?
-            if (island != null && plugin.getServer().getOnlinePlayers().stream()
+            if (island != null && Bukkit.getServer().getOnlinePlayers().stream()
                     .filter(p -> !event.getPlayer().equals(p))
                     .noneMatch(p -> plugin.getIslands().getMembers(w, event.getPlayer().getUniqueId()).contains(p.getUniqueId()))) {
                 // No, there are no more players online on this island

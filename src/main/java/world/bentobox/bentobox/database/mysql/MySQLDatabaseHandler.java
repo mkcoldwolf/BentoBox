@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -32,18 +33,21 @@ import world.bentobox.bentobox.database.objects.DataObject;
  */
 public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
 
+    private static final String COULD_NOT_LOAD_OBJECTS = "Could not load objects ";
+    private static final String COULD_NOT_LOAD_OBJECT = "Could not load object ";
+
     /**
      * Connection to the database
      */
     private Connection connection;
 
     /**
-     * FIFO queue for saves. Note that the assumption here is that most database objects will be held
+     * FIFO queue for saves or deletions. Note that the assumption here is that most database objects will be held
      * in memory because loading is not handled with this queue. That means that it is theoretically
      * possible to load something before it has been saved. So, in general, load your objects and then
      * save them async only when you do not need the data again immediately.
      */
-    private Queue<Runnable> saveQueue;
+    private Queue<Runnable> processQueue;
 
     /**
      * Async save task that runs repeatedly
@@ -68,13 +72,13 @@ public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
         }
         // Check if the table exists in the database and if not, create it
         createSchema();
-        saveQueue = new ConcurrentLinkedQueue<>();
+        processQueue = new ConcurrentLinkedQueue<>();
         if (plugin.isEnabled()) {
             asyncSaveTask = Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
                 // Loop continuously
-                while (plugin.isEnabled() || !saveQueue.isEmpty()) {
-                    while (!saveQueue.isEmpty()) {
-                        saveQueue.poll().run();
+                while (plugin.isEnabled() || !processQueue.isEmpty()) {
+                    while (!processQueue.isEmpty()) {
+                        processQueue.poll().run();
                     }
                     // Clear the queue and then sleep
                     try {
@@ -107,40 +111,46 @@ public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
 
     @Override
     public List<T> loadObjects() {
+        try (Statement preparedStatement = connection.createStatement()) {
+            return loadIt(preparedStatement);
+        } catch (SQLException e) {
+            plugin.logError(COULD_NOT_LOAD_OBJECTS + e.getMessage());
+        }
+        return Collections.emptyList();
+    }
+
+    private List<T> loadIt(Statement preparedStatement) {
         List<T> list = new ArrayList<>();
         StringBuilder sb = new StringBuilder();
         sb.append("SELECT `json` FROM `");
         sb.append(dataObject.getCanonicalName());
         sb.append("`");
-        try (Statement preparedStatement = connection.createStatement()) {
-            try (ResultSet resultSet = preparedStatement.executeQuery(sb.toString())) {
-                // Load all the results
-                Gson gson = getGson();
-                while (resultSet.next()) {
-                    String json = resultSet.getString("json");
-                    if (json != null) {
-                        try {
-                            T gsonResult = gson.fromJson(json, dataObject);
-                            if (gsonResult != null) {
-                                list.add(gsonResult);
-                            }
-                        } catch (JsonSyntaxException ex) {
-                            plugin.logError("Could not load object " + ex.getMessage());
+
+        try (ResultSet resultSet = preparedStatement.executeQuery(sb.toString())) {
+            // Load all the results
+            Gson gson = getGson();
+            while (resultSet.next()) {
+                String json = resultSet.getString("json");
+                if (json != null) {
+                    try {
+                        T gsonResult = gson.fromJson(json, dataObject);
+                        if (gsonResult != null) {
+                            list.add(gsonResult);
                         }
+                    } catch (JsonSyntaxException ex) {
+                        plugin.logError(COULD_NOT_LOAD_OBJECT + ex.getMessage());
                     }
                 }
             }
-        } catch (SQLException e) {
-            plugin.logError("Could not load objects " + e.getMessage());
+        } catch (Exception e) {
+            plugin.logError(COULD_NOT_LOAD_OBJECTS + e.getMessage());
         }
         return list;
     }
 
     @Override
     public T loadObject(String uniqueId) {
-        String sb = "SELECT `json` FROM `" +
-                dataObject.getCanonicalName() +
-                "` WHERE uniqueId = ? LIMIT 1";
+        String sb = "SELECT `json` FROM `" + dataObject.getCanonicalName() + "` WHERE uniqueId = ? LIMIT 1";
         try (PreparedStatement preparedStatement = connection.prepareStatement(sb)) {
             // UniqueId needs to be placed in quotes
             preparedStatement.setString(1, "\"" + uniqueId + "\"");
@@ -150,9 +160,11 @@ public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
                     Gson gson = getGson();
                     return gson.fromJson(resultSet.getString("json"), dataObject);
                 }
+            } catch (Exception e) {
+                plugin.logError(COULD_NOT_LOAD_OBJECT + uniqueId + " " + e.getMessage());
             }
         } catch (SQLException e) {
-            plugin.logError("Could not load object " + uniqueId + " " + e.getMessage());
+            plugin.logError(COULD_NOT_LOAD_OBJECT + uniqueId + " " + e.getMessage());
         }
         return null;
     }
@@ -177,7 +189,7 @@ public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
         String toStore = gson.toJson(instance);
         if (plugin.isEnabled()) {
             // Async
-            saveQueue.add(() -> store(instance, toStore, sb));
+            processQueue.add(() -> store(instance, toStore, sb));
         } else {
             // Sync
             store(instance, toStore, sb);
@@ -194,8 +206,19 @@ public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
         }
     }
 
+    /* (non-Javadoc)
+     * @see world.bentobox.bentobox.database.AbstractDatabaseHandler#deleteID(java.lang.String)
+     */
     @Override
-    public boolean deleteID(String uniqueId) {
+    public void deleteID(String uniqueId) {
+        if (plugin.isEnabled()) {
+            processQueue.add(() -> delete(uniqueId));
+        } else {
+            delete(uniqueId);
+        }
+    }
+
+    private void delete(String uniqueId) {
         String sb = "DELETE FROM `" +
                 dataObject.getCanonicalName() +
                 "` WHERE uniqueId = ?";
@@ -203,10 +226,8 @@ public class MySQLDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
             // UniqueId needs to be placed in quotes
             preparedStatement.setString(1, "\"" + uniqueId + "\"");
             preparedStatement.execute();
-            return preparedStatement.getUpdateCount() > 0;
         } catch (Exception e) {
             plugin.logError("Could not delete object " + dataObject.getCanonicalName() + " " + uniqueId + " " + e.getMessage());
-            return false;
         }
     }
 

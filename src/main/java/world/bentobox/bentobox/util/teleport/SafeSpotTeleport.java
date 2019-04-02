@@ -52,7 +52,7 @@ public class SafeSpotTeleport {
      * @param plugin - plugin object
      * @param entity - entity to teleport
      * @param location - the location
-     * @param failureMessage - already translated failure message
+     * @param failureMessage - locale key for the failure message
      * @param portal - true if this is a portal teleport
      * @param homeNumber - home number to go to
      */
@@ -77,6 +77,13 @@ public class SafeSpotTeleport {
             } else {
                 // If this is not a portal teleport, then go to the safe location immediately
                 entity.teleport(location);
+                // Exit spectator mode if in it
+                if (entity instanceof Player) {
+                    Player player = (Player)entity;
+                    if (overrideGamemode && player.getGameMode().equals(GameMode.SPECTATOR)) {
+                        player.setGameMode(plugin.getIWM().getDefaultGameMode(player.getWorld()));
+                    }
+                }
                 return;
             }
         }
@@ -115,14 +122,16 @@ public class SafeSpotTeleport {
         task.cancel();
         // Check portal
         if (portal && bestSpot != null) {
-            // No portals found, teleport to the best spot we found
+            // Portals found, teleport to the best spot we found
             teleportEntity(bestSpot);
             if (overrideGamemode && entity instanceof Player && ((Player)entity).getGameMode().equals(GameMode.SPECTATOR)) {
                 ((Player)entity).setGameMode(plugin.getIWM().getDefaultGameMode(bestSpot.getWorld()));
             }
-        } else if (entity instanceof Player && !failureMessage.isEmpty()) {
+        } else if (entity instanceof Player) {
             // Failed, no safe spot
-            entity.sendMessage(failureMessage);
+            if (!failureMessage.isEmpty()) {
+                User.getInstance(entity).notify(failureMessage);
+            }
             if (overrideGamemode && ((Player)entity).getGameMode().equals(GameMode.SPECTATOR)) {
                 if (plugin.getIWM().inWorld(entity.getLocation())) {
                     ((Player)entity).setGameMode(plugin.getIWM().getDefaultGameMode(entity.getWorld()));
@@ -392,7 +401,7 @@ public class SafeSpotTeleport {
         }
 
         /**
-         * Sets whether the player's gamemode should be overridden.
+         * Sets whether the player's gamemode should be overridden. Default is <tt>true</tt>
          * @param overrideGamemode whether the player's gamemode should be overridden.
          * @return Builder
          */
@@ -416,7 +425,7 @@ public class SafeSpotTeleport {
                 return null;
             }
             if (failureMessage.isEmpty() && entity instanceof Player) {
-                failureMessage = User.getInstance(entity).getTranslation("general.errors.warp-not-safe");
+                failureMessage = "general.errors.warp-not-safe";
             }
             return new SafeSpotTeleport(plugin, entity, location, failureMessage, portal, homeNumber, overrideGamemode);
         }

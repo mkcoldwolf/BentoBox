@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.addons.Addon;
 
@@ -119,8 +120,7 @@ public abstract class AbstractDatabaseHandler<T> {
     /**
      * Attempts to delete the object with the uniqueId
      * @param uniqueId - uniqueId of object
-     * @return true if successful, false if there is no such uniqueId
      * @since 1.1
      */
-    public abstract boolean deleteID(String uniqueId);
+    public abstract void deleteID(String uniqueId);
 }

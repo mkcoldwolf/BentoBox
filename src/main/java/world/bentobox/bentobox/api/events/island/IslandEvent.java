@@ -6,8 +6,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 
 import world.bentobox.bentobox.api.events.IslandBaseEvent;
-import world.bentobox.bentobox.database.objects.IslandDeletion;
 import world.bentobox.bentobox.database.objects.Island;
+import world.bentobox.bentobox.database.objects.IslandDeletion;
 import world.bentobox.bentobox.lists.Flags;
 
 /**
@@ -107,11 +107,40 @@ public class IslandEvent extends IslandBaseEvent {
         /**
          * Reserved
          */
-        UNKNOWN
+        UNKNOWN,
+        /**
+         * Player was unregistered from the island by admin
+         * @since 1.3.0
+         */
+        UNREGISTERED,
+        /**
+         * Player was registered to the island by admin
+         * @since 1.3.0
+         */
+        REGISTERED,
+        /**
+         * Player was expelled
+         * @since 1.4.0
+         */
+        EXPEL
     }
 
     public static IslandEventBuilder builder() {
         return new IslandEventBuilder();
+    }
+
+    /**
+     * Fired when a player will be expelled from an island.
+     * May be cancelled.
+     * Cancellation will result in the expel being aborted.
+     *
+     * @since 1.4.0
+     */
+    public static class IslandExpelEvent extends IslandBaseEvent {
+        private IslandExpelEvent(Island island, UUID player, boolean admin, Location location) {
+            // Final variables have to be declared in the constructor
+            super(island, player, admin, location);
+        }
     }
 
     /**
@@ -209,6 +238,27 @@ public class IslandEvent extends IslandBaseEvent {
             return deletedIslandInfo;
         }
     }
+
+    /**
+     * Fired when a player is unregistered from an island.
+     * @since 1.3.0
+     */
+    public static class IslandUnregisteredEvent extends IslandBaseEvent {
+        private IslandUnregisteredEvent(Island island, UUID player, boolean admin, Location location) {
+            super(island, player, admin, location);
+        }
+    }
+
+    /**
+     * Fired when a player is registered from an island.
+     * @since 1.3.0
+     */
+    public static class IslandRegisteredEvent extends IslandBaseEvent {
+        private IslandRegisteredEvent(Island island, UUID player, boolean admin, Location location) {
+            super(island, player, admin, location);
+        }
+    }
+
     /**
      * Fired when an a player enters an island.
      * Cancellation has no effect.
@@ -337,6 +387,10 @@ public class IslandEvent extends IslandBaseEvent {
             Bukkit.getServer().getPluginManager().callEvent(new IslandEvent(island, player, admin, location, reason));
             // Generate explicit events
             switch (reason) {
+            case EXPEL:
+                IslandExpelEvent expel = new IslandExpelEvent(island, player, admin, location);
+                Bukkit.getServer().getPluginManager().callEvent(expel);
+                return expel;
             case BAN:
                 IslandBanEvent ban = new IslandBanEvent(island, player, admin, location);
                 Bukkit.getServer().getPluginManager().callEvent(ban);
@@ -389,6 +443,14 @@ public class IslandEvent extends IslandBaseEvent {
                 IslandUnlockEvent unlock = new IslandUnlockEvent(island, player, admin, location);
                 Bukkit.getServer().getPluginManager().callEvent(unlock);
                 return unlock;
+            case REGISTERED:
+                IslandRegisteredEvent reg = new IslandRegisteredEvent(island, player, admin, location);
+                Bukkit.getServer().getPluginManager().callEvent(reg);
+                return reg;
+            case UNREGISTERED:
+                IslandUnregisteredEvent unreg = new IslandUnregisteredEvent(island, player, admin, location);
+                Bukkit.getServer().getPluginManager().callEvent(unreg);
+                return unreg;
             default:
                 IslandGeneralEvent general = new IslandGeneralEvent(island, player, admin, location);
                 Bukkit.getServer().getPluginManager().callEvent(general);

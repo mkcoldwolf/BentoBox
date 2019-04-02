@@ -13,7 +13,7 @@ import world.bentobox.bentobox.managers.island.NewIsland;
 /**
  * /island create - Create an island.
  *
- * @author Tastybento
+ * @author tastybento
  */
 public class IslandCreateCommand extends CompositeCommand {
 
@@ -34,7 +34,7 @@ public class IslandCreateCommand extends CompositeCommand {
     }
 
     @Override
-    public boolean execute(User user, String label, List<String> args) {
+    public boolean canExecute(User user, String label, List<String> args) {
         if (getIslands().hasIsland(getWorld(), user.getUniqueId())
                 || getIslands().inTeam(getWorld(), user.getUniqueId())) {
             user.sendMessage("general.errors.already-have-island");
@@ -46,15 +46,18 @@ public class IslandCreateCommand extends CompositeCommand {
             user.sendMessage("commands.island.create.too-many-islands");
             return false;
         }
+        return true;
+    }
 
-        user.sendMessage("commands.island.create.creating-island");
+    @Override
+    public boolean execute(User user, String label, List<String> args) {
         // Default schem is 'island'
         String name = "island";
         if (!args.isEmpty()) {
             name = args.get(0).toLowerCase(java.util.Locale.ENGLISH);
             // Permission check
             String permission = this.getPermissionPrefix() + "island.create." + name;
-            if (!user.isOp() && !user.hasPermission(permission)) {
+            if (!user.hasPermission(permission)) {
                 user.sendMessage("general.errors.no-permission", TextVariables.PERMISSION, permission);
                 return false;
             }
@@ -66,6 +69,7 @@ public class IslandCreateCommand extends CompositeCommand {
             }
 
         }
+        user.sendMessage("commands.island.create.creating-island");
         try {
             NewIsland.builder()
             .player(user)
@@ -78,7 +82,6 @@ public class IslandCreateCommand extends CompositeCommand {
             user.sendMessage("commands.island.create.unable-create-island");
             return false;
         }
-
         if (getSettings().isResetCooldownOnCreate()) {
             getParent().getSubCommand("reset").ifPresent(resetCommand -> resetCommand.setCooldown(user.getUniqueId(), null, getSettings().getResetCooldown()));
         }

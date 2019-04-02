@@ -159,10 +159,11 @@ public class CycleClickTest {
         when(im.getProtectedIslandAt(Mockito.eq(inside))).thenReturn(opIsland);
         when(im.getProtectedIslandAt(Mockito.eq(inside2))).thenReturn(opIsland);
         when(im.getProtectedIslandAt(Mockito.eq(outside))).thenReturn(Optional.empty());
+        when(im.getIslandAt(Mockito.any())).thenReturn(opIsland);
 
         PanelItem panelItem = mock(PanelItem.class);
         flag = mock(Flag.class);
-        when(flag.toPanelItem(Mockito.any(), Mockito.any())).thenReturn(panelItem);
+        when(flag.toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false))).thenReturn(panelItem);
         when(panelItem.getItem()).thenReturn(mock(ItemStack.class));
         FlagsManager fm = mock(FlagsManager.class);
         when(fm.getFlag(Mockito.anyString())).thenReturn(Optional.of(flag));
@@ -232,14 +233,14 @@ public class CycleClickTest {
         // Click left
         assertTrue(udc.onClick(panel, user, ClickType.LEFT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.OWNER_RANK));
-        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv).setItem(Mockito.eq(SLOT), Mockito.any());
         // Check rollover
         // Clicking when Owner should go to Visitor
         when(island.getFlag(Mockito.any())).thenReturn(RanksManager.OWNER_RANK);
         assertTrue(udc.onClick(panel, user, ClickType.LEFT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.VISITOR_RANK));
-        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv, Mockito.times(2)).setItem(Mockito.eq(SLOT), Mockito.any());
     }
 
@@ -253,14 +254,14 @@ public class CycleClickTest {
         // Click left
         assertTrue(udc.onClick(panel, user, ClickType.LEFT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.TRUSTED_RANK));
-        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv).setItem(Mockito.eq(SLOT), Mockito.any());
         // Check rollover
         // Clicking when Member should go to Coop
         when(island.getFlag(Mockito.any())).thenReturn(RanksManager.MEMBER_RANK);
         assertTrue(udc.onClick(panel, user, ClickType.LEFT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.COOP_RANK));
-        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv, Mockito.times(2)).setItem(Mockito.eq(SLOT), Mockito.any());
     }
 
@@ -272,14 +273,14 @@ public class CycleClickTest {
         // Right click - down rank to Trusted
         assertTrue(udc.onClick(panel, user, ClickType.RIGHT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.TRUSTED_RANK));
-        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv).setItem(Mockito.eq(SLOT), Mockito.any());
         // Check rollover
         // Clicking when Visitor should go to Owner
         when(island.getFlag(Mockito.any())).thenReturn(RanksManager.VISITOR_RANK);
         assertTrue(udc.onClick(panel, user, ClickType.RIGHT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.OWNER_RANK));
-        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv, Mockito.times(2)).setItem(Mockito.eq(SLOT), Mockito.any());
     }
 
@@ -293,14 +294,14 @@ public class CycleClickTest {
         // Right click
         assertTrue(udc.onClick(panel, user, ClickType.RIGHT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.COOP_RANK));
-        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv).setItem(Mockito.eq(SLOT), Mockito.any());
         // Check rollover
         // Clicking when Coop should go to Member
         when(island.getFlag(Mockito.any())).thenReturn(RanksManager.COOP_RANK);
         assertTrue(udc.onClick(panel, user, ClickType.RIGHT, SLOT));
         Mockito.verify(island).setFlag(Mockito.eq(flag), Mockito.eq(RanksManager.MEMBER_RANK));
-        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any());
+        Mockito.verify(flag, Mockito.times(2)).toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false));
         Mockito.verify(inv, Mockito.times(2)).setItem(Mockito.eq(SLOT), Mockito.any());
     }
 

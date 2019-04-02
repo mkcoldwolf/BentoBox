@@ -10,9 +10,9 @@ import java.util.UUID;
 
 import org.bukkit.Location;
 import org.bukkit.World;
-
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.util.Util;
 
@@ -23,6 +23,11 @@ public class IslandCache {
     @NonNull
     private Map<@NonNull Location, @NonNull Island> islandsByLocation;
     /**
+     * Map of all islands with island uniqueId as key
+     */
+    @NonNull
+    private Map<@NonNull String, @NonNull Island> islandsById;
+    /**
      * Every player who is associated with an island is in this map.
      */
     @NonNull
@@ -32,6 +37,7 @@ public class IslandCache {
 
     public IslandCache() {
         islandsByLocation = new HashMap<>();
+        islandsById = new HashMap<>();
         islandsByUUID = new HashMap<>();
         grids = new HashMap<>();
     }
@@ -43,10 +49,16 @@ public class IslandCache {
      */
     public boolean addIsland(@NonNull Island island) {
         if (island.getCenter() == null || island.getWorld() == null) {
-            return false;
+            /* Special handling - return true.
+               The island will not be quarantined, but just not loaded
+               This can occur when a gamemode is removed temporarily from the server
+               TODO: have an option to remove these when the purge command is added
+             */
+            return true;
         }
         if (addToGrid(island)) {
             islandsByLocation.put(island.getCenter(), island);
+            islandsById.put(island.getUniqueId(), island);
             // Make world
             islandsByUUID.putIfAbsent(island.getWorld(), new HashMap<>());
             // Only add islands to this map if they are owned
@@ -81,6 +93,7 @@ public class IslandCache {
 
     public void clear() {
         islandsByLocation.clear();
+        islandsById.clear();
         islandsByUUID.clear();
     }
 
@@ -93,6 +106,7 @@ public class IslandCache {
         if (!islandsByLocation.remove(island.getCenter(), island) || !islandsByUUID.containsKey(island.getWorld())) {
             return false;
         }
+        islandsById.remove(island.getUniqueId());
         islandsByUUID.get(island.getWorld()).entrySet().removeIf(en -> en.getValue().equals(island));
         // Remove from grid
         grids.putIfAbsent(island.getWorld(), new IslandGrid());
@@ -111,8 +125,8 @@ public class IslandCache {
 
     /**
      * Returns island referenced by UUID
-     * @param world world to check
-     * @param uuid player
+     * @param world world to check. Includes nether and end worlds.
+     * @param uuid player's UUID
      * @return island or null if none
      */
     @Nullable
@@ -236,8 +250,45 @@ public class IslandCache {
      */
     public void setOwner(@NonNull Island island, @Nullable UUID newOwnerUUID) {
         island.setOwner(newOwnerUUID);
-        islandsByUUID.putIfAbsent(Util.getWorld(island.getWorld()), new HashMap<>());
-        islandsByUUID.get(Util.getWorld(island.getWorld())).put(newOwnerUUID, island);
+        islandsByUUID.computeIfAbsent(Util.getWorld(island.getWorld()), k -> new HashMap<>()).put(newOwnerUUID, island);
         islandsByLocation.put(island.getCenter(), island);
+        islandsById.put(island.getUniqueId(), island);
+    }
+
+    /**
+     * Get the island by unique id
+     * @param uniqueId unique id of the Island.
+     * @return island or null if none found
+     * @since 1.3.0
+     */
+    @Nullable
+    public Island getIslandById(@NonNull String uniqueId) {
+        return islandsById.get(uniqueId);
+    }
+
+    /**
+     * Removes an island from the cache completely without altering the island object
+     * @param island - island to remove
+     * @since 1.3.0
+     */
+    public void removeIsland(@NonNull Island island) {
+        islandsByLocation.values().removeIf(island::equals);
+        islandsById.values().removeIf(island::equals);
+        if (islandsByUUID.containsKey(Util.getWorld(island.getWorld()))) {
+            islandsByUUID.get(Util.getWorld(island.getWorld())).values().removeIf(island::equals);
+        }
+        if (grids.containsKey(Util.getWorld(island.getWorld()))) {
+            grids.get(Util.getWorld(island.getWorld())).removeFromGrid(island);
+        }
+    }
+
+    /**
+     * Resets all islands in this game mode to default flag settings
+     * @param world - world
+     * @since 1.3.0
+     */
+    public void resetAllFlags(World world) {
+        World w = Util.getWorld(world);
+        islandsById.values().stream().filter(i -> i.getWorld().equals(w)).forEach(Island::setFlagsDefaults);
     }
 }

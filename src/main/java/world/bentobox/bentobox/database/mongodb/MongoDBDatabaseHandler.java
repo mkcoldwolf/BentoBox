@@ -68,7 +68,11 @@ public class MongoDBDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
             // The deprecated serialize option does not have a viable alternative without involving a huge amount of custom code
             String json = JSON.serialize(document);
             json = json.replaceFirst(MONGO_ID, UNIQUEID);
-            list.add(gson.fromJson(json, dataObject));
+            try {
+                list.add(gson.fromJson(json, dataObject));
+            } catch (Exception e) {
+                plugin.logError("Could not load object :" + e.getMessage());
+            }
         }
         return list;
     }
@@ -113,12 +117,11 @@ public class MongoDBDatabaseHandler<T> extends AbstractJSONDatabaseHandler<T> {
     }
 
     @Override
-    public boolean deleteID(String uniqueId) {
+    public void deleteID(String uniqueId) {
         try {
-            return collection.findOneAndDelete(new Document(MONGO_ID, uniqueId)) != null;
+            collection.findOneAndDelete(new Document(MONGO_ID, uniqueId));
         } catch (Exception e) {
             plugin.logError("Could not delete object " + dataObject.getCanonicalName() + " " + uniqueId + " " + e.getMessage());
-            return false;
         }
     }
 

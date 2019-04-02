@@ -8,8 +8,8 @@ import java.util.Optional;
 
 import org.bukkit.Bukkit;
 import org.bukkit.event.Listener;
-
 import org.eclipse.jdt.annotation.NonNull;
+
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.lists.Flags;
@@ -20,12 +20,14 @@ import world.bentobox.bentobox.lists.Flags;
  */
 public class FlagsManager {
 
-    private BentoBox plugin;
+    private @NonNull BentoBox plugin;
     private List<@NonNull Flag> flags = new ArrayList<>();
 
     /**
      * Stores the flag listeners that have already been registered into Bukkit's API to avoid duplicates.
-     * Value is true if the listener has been registered already
+     * Value is true if the listener has been registered already.
+     * This helps to make sure each flag listener is loaded correctly.
+     * @see #registerListeners()
      */
     private Map<@NonNull Listener, @NonNull Boolean> registeredListeners = new HashMap<>();
 
@@ -44,7 +46,7 @@ public class FlagsManager {
     public boolean registerFlag(@NonNull Flag flag) {
         // Check in case the flag id or icon already exists
         for (Flag fl : flags) {
-            if (fl.getID().equals(flag.getID()) || fl.getIcon().equals(flag.getIcon())) {
+            if (fl.getID().equals(flag.getID())) {
                 return false;
             }
         }

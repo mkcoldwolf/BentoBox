@@ -82,7 +82,7 @@ public class IslandToggleClickTest {
         when(flag.isSetForWorld(Mockito.any())).thenReturn(false);
         PanelItem item = mock(PanelItem.class);
         when(item.getItem()).thenReturn(mock(ItemStack.class));
-        when(flag.toPanelItem(Mockito.any(), Mockito.eq(user))).thenReturn(item);
+        when(flag.toPanelItem(Mockito.any(), Mockito.eq(user), Mockito.eq(false))).thenReturn(item);
         when(fm.getFlag(Mockito.anyString())).thenReturn(Optional.of(flag));
         when(plugin.getFlagsManager()).thenReturn(fm);
 
@@ -92,6 +92,11 @@ public class IslandToggleClickTest {
         when(island.getOwner()).thenReturn(uuid);
         when(im.getIsland(Mockito.any(World.class), Mockito.any(User.class))).thenReturn(island);
         when(plugin.getIslands()).thenReturn(im);
+
+        // Optional island
+        Optional<Island> opIsland = Optional.ofNullable(island);
+        when(im.getIslandAt(Mockito.any())).thenReturn(opIsland);
+
     }
 
     @Test
@@ -117,6 +122,7 @@ public class IslandToggleClickTest {
 
     @Test
     public void testOnClickNoIsland() {
+        when(im.getIslandAt(Mockito.any())).thenReturn(Optional.empty());
         when(im.getIsland(Mockito.any(), Mockito.any(User.class))).thenReturn(null);
         listener.onClick(panel, user, ClickType.LEFT, 0);
         Mockito.verify(island, Mockito.never()).toggleFlag(flag);

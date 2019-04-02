@@ -1,6 +1,9 @@
 package world.bentobox.bentobox.util;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.jar.JarEntry;
@@ -12,8 +15,10 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
 import org.bukkit.block.BlockFace;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.util.Vector;
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.user.User;
@@ -269,5 +274,60 @@ public class Util {
         default:
             return 0F;
         }
+    }
+
+    /**
+     * Returns a Date instance corresponding to the input, or null if the input could not be parsed.
+     * @param gitHubDate the input to parse
+     * @return the Date instance following a {@code yyyy-MM-dd HH:mm:ss} format, or {@code null}.
+     * @since 1.3.0
+     */
+    @Nullable
+    public static Date parseGitHubDate(@NonNull String gitHubDate) {
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        try {
+            return format.parse(gitHubDate.replace('T', ' ').replace("Z", ""));
+        } catch (ParseException e) {
+            return null;
+        }
+    }
+
+
+    /**
+     * Returns whether this entity is naturally hostile towards the player or not.
+     * @param entity the entity to check.
+     * @return {@code true} if this entity is hostile, {@code false} otherwise.
+     * @since 1.4.0
+     */
+    public static boolean isHostileEntity(Entity entity) {
+        // MagmaCube extends Slime
+        // Slime extends Mob
+        // Ghast and Phantom extends Flying
+        // Flying extends Mob
+        // Shulker is Golem, but other Golems cannot be added here.
+        // EnderDragon extends LivingEntity
+        // Most of hostile mobs extends Monster.
+        // PufferFish is a unique fix.
+
+        return entity instanceof Monster || entity instanceof Flying || entity instanceof Slime ||
+            entity instanceof Shulker || entity instanceof EnderDragon || entity instanceof PufferFish;
+    }
+
+
+    /**
+     * Returns whether this entity is naturally passive towards the player or not.
+     * This means that this entity normally won't hurt the player.
+     * @param entity the entity to check.
+     * @return {@code true} if this entity is passive, {@code false} otherwise.
+     * @since 1.4.0
+     */
+    public static boolean isPassiveEntity(Entity entity) {
+        // IronGolem and Snowman extends Golem, but Shulker also extends Golem
+        // Fishes, Dolphin and Squid extends WaterMob | Excludes PufferFish
+        // Bat extends Mob
+        // Most of passive mobs extends Animals
+
+        return entity instanceof Animals || entity instanceof IronGolem || entity instanceof Snowman ||
+            entity instanceof WaterMob && !(entity instanceof PufferFish) || entity instanceof Bat;
     }
 }
