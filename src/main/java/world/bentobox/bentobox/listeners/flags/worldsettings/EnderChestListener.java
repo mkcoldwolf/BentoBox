@@ -1,6 +1,3 @@
-/*
-
- */
 package world.bentobox.bentobox.listeners.flags.worldsettings;
 
 import org.bukkit.Material;
@@ -35,9 +32,9 @@ public class EnderChestListener extends FlagListener {
 
     private boolean checkEnderChest(Player player, Material type) {
         if (type.equals(Material.ENDER_CHEST)
-                && getIWM().inWorld(player.getLocation())
+                && getIWM().inWorld(player.getWorld())
                 && !player.isOp()
-                && !player.hasPermission(getPlugin().getIWM().getPermissionPrefix(player.getWorld()) + ".craft.enderchest")
+                && !player.hasPermission(getPlugin().getIWM().getPermissionPrefix(player.getWorld()) + "craft.enderchest")
                 && !Flags.ENDER_CHEST.isSetForWorld(player.getWorld())) {
             // Not allowed
             User user = User.getInstance(player);

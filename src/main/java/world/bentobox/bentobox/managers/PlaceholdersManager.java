@@ -1,13 +1,18 @@
 package world.bentobox.bentobox.managers;
 
+import java.util.Arrays;
+import java.util.Optional;
+
+import org.bukkit.entity.Player;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.addons.Addon;
+import world.bentobox.bentobox.api.addons.GameModeAddon;
 import world.bentobox.bentobox.api.placeholders.PlaceholderReplacer;
-import world.bentobox.bentobox.hooks.PlaceholderAPIHook;
-
-import java.util.Optional;
+import world.bentobox.bentobox.hooks.placeholders.PlaceholderAPIHook;
+import world.bentobox.bentobox.lists.GameModePlaceholder;
 
 /**
  * Manages placeholder integration.
@@ -51,6 +56,17 @@ public class PlaceholdersManager {
     }
 
     /**
+     * Registers default placeholders for this gamemode addon.
+     * @param addon the gamemode addon to register the default placeholders too.
+     * @since 1.5.0
+     */
+    public void registerDefaultPlaceholders(@NonNull GameModeAddon addon) {
+        Arrays.stream(GameModePlaceholder.values())
+        .filter(placeholder -> !isPlaceholder(addon, placeholder.getPlaceholder()))
+        .forEach(placeholder -> registerPlaceholder(addon, placeholder.getPlaceholder(), new DefaultPlaceholder(addon, placeholder)));
+    }
+
+    /**
      * Unregisters this placeholder on the behalf of BentoBox.
      * Note that if the placeholder you are trying to unregister has been registered by an addon, you should use {@link #unregisterPlaceholder(Addon, String)} instead.
      * @param placeholder the placeholder to unregister, not null.
@@ -82,10 +98,11 @@ public class PlaceholdersManager {
      * @return Optional containing the PlaceholderAPIHook instance or an empty Optional otherwise.
      * @since 1.4.0
      */
+    @NonNull
     private Optional<PlaceholderAPIHook> getPlaceholderAPIHook() {
         return plugin.getHooks().getHook("PlaceholderAPI").map(hook -> (PlaceholderAPIHook) hook);
     }
-    
+
     /**
      * Checks if a placeholder with this name is already registered
      * @param addon the addon, not null
@@ -94,6 +111,21 @@ public class PlaceholdersManager {
      * @since 1.4.0
      */
     public boolean isPlaceholder(@NonNull Addon addon, @NonNull String placeholder) {
-    	return getPlaceholderAPIHook().map(h -> h.isPlaceholder(addon, placeholder)).orElse(false);
+        return getPlaceholderAPIHook().map(h -> h.isPlaceholder(addon, placeholder)).orElse(false);
+    }
+
+    /**
+     * Replaces the placeholders in this String and returns it.
+     * @param player the Player to get the placeholders for.
+     * @param string the String to replace the placeholders in.
+     * @return the String with placeholders replaced, or the identical String if no placeholders were available.
+     * @since 1.5.0
+     */
+    public String replacePlaceholders(@NonNull Player player, @NonNull String string) {
+        Optional<PlaceholderAPIHook> papi = getPlaceholderAPIHook();
+        if (papi.isPresent()) {
+            string = papi.get().replacePlaceholders(player, string);
+        }
+        return string;
     }
 }

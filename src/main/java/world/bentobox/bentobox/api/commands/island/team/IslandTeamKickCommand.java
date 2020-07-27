@@ -1,17 +1,18 @@
 package world.bentobox.bentobox.api.commands.island.team;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
-
-import org.bukkit.Bukkit;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.commands.ConfirmableCommand;
-import world.bentobox.bentobox.api.events.IslandBaseEvent;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.events.team.TeamEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
+import world.bentobox.bentobox.managers.RanksManager;
+import world.bentobox.bentobox.util.Util;
 
 
 public class IslandTeamKickCommand extends ConfirmableCommand {
@@ -22,7 +23,7 @@ public class IslandTeamKickCommand extends ConfirmableCommand {
 
     @Override
     public void setup() {
-        setPermission("island.team");
+        setPermission("island.team.kick");
         setOnlyPlayer(true);
         setParametersHelp("commands.island.team.kick.parameters");
         setDescription("commands.island.team.kick.description");
@@ -39,6 +40,13 @@ public class IslandTeamKickCommand extends ConfirmableCommand {
             user.sendMessage("general.errors.not-owner");
             return false;
         }
+        // Check rank to use command
+        Island island = getIslands().getIsland(getWorld(), user);
+        int rank = Objects.requireNonNull(island).getRank(user);
+        if (rank < island.getRankCommand(getUsage())) {
+            user.sendMessage("general.errors.insufficient-rank", TextVariables.RANK, user.getTranslation(getPlugin().getRanksManager().getRank(rank)));
+            return false;
+        }
         // If args are not right, show help
         if (args.size() != 1) {
             showHelp(this, user);
@@ -51,7 +59,7 @@ public class IslandTeamKickCommand extends ConfirmableCommand {
             return false;
         }
         if (targetUUID.equals(user.getUniqueId())) {
-            user.sendMessage("commands.island.kick.cannot-kick");
+            user.sendMessage("commands.island.team.kick.cannot-kick");
             return false;
         }
         if (!getIslands().getMembers(getWorld(), user.getUniqueId()).contains(targetUUID)) {
@@ -69,9 +77,11 @@ public class IslandTeamKickCommand extends ConfirmableCommand {
 
     private void kick(User user, UUID targetUUID) {
         User target = User.getInstance(targetUUID);
-        target.sendMessage("commands.island.team.kick.owner-kicked");
+        target.sendMessage("commands.island.team.kick.owner-kicked", "[gamemode]", getAddon().getDescription().getName());
         Island oldIsland = getIslands().getIsland(getWorld(), targetUUID);
         getIslands().removePlayer(getWorld(), targetUUID);
+        // Execute commands when leaving
+        Util.runCommands(target, getIWM().getOnLeaveCommands(oldIsland.getWorld()), "leave");
         // Remove money inventory etc.
         if (getIWM().isOnLeaveResetEnderChest(getWorld())) {
             if (target.isOnline()) {
@@ -82,11 +92,10 @@ public class IslandTeamKickCommand extends ConfirmableCommand {
                 getPlayers().save(targetUUID);
             }
         }
-        if (getIWM().isOnLeaveResetInventory(getWorld())) {
+        if (getIWM().isOnLeaveResetInventory(getWorld()) && !getIWM().isKickedKeepInventory(getWorld())) {
             if (target.isOnline()) {
                 target.getPlayer().getInventory().clear();
-            }
-            else {
+            } else {
                 getPlayers().getPlayer(targetUUID).addToPendingKick(getWorld());
                 getPlayers().save(targetUUID);
             }
@@ -94,19 +103,42 @@ public class IslandTeamKickCommand extends ConfirmableCommand {
         if (getSettings().isUseEconomy() && getIWM().isOnLeaveResetMoney(getWorld())) {
             getPlugin().getVault().ifPresent(vault -> vault.withdraw(target, vault.getBalance(target)));
         }
-        user.sendMessage("general.success");
+        // Reset the health
+        if (getIWM().isOnLeaveResetHealth(getWorld())) {
+            target.getPlayer().setHealth(20.0D);
+        }
+
+        // Reset the hunger
+        if (getIWM().isOnLeaveResetHunger(getWorld())) {
+            target.getPlayer().setFoodLevel(20);
+        }
+
+        // Reset the XP
+        if (getIWM().isOnLeaveResetXP(getWorld())) {
+            target.getPlayer().setTotalExperience(0);
+        }
+        user.sendMessage("commands.island.team.kick.success", TextVariables.NAME, target.getName());
         // Fire event
-        IslandBaseEvent e = TeamEvent.builder()
-                .island(oldIsland)
-                .reason(TeamEvent.Reason.KICK)
-                .involvedPlayer(targetUUID)
-                .build();
-        Bukkit.getServer().getPluginManager().callEvent(e);
+        TeamEvent.builder()
+        .island(oldIsland)
+        .reason(TeamEvent.Reason.KICK)
+        .involvedPlayer(targetUUID)
+        .build();
+        IslandEvent.builder()
+        .island(oldIsland)
+        .involvedPlayer(user.getUniqueId())
+        .admin(false)
+        .reason(IslandEvent.Reason.RANK_CHANGE)
+        .rankChange(oldIsland.getRank(user), RanksManager.VISITOR_RANK)
+        .build();
 
         // Add cooldown for this player and target
         if (getSettings().getInviteCooldown() > 0 && getParent() != null) {
             // Get the invite class from the parent
-            getParent().getSubCommand("invite").ifPresent(c -> c.setCooldown(user.getUniqueId(), targetUUID, getSettings().getInviteCooldown() * 60));
+            getParent().getSubCommand("invite").ifPresent(c -> c.setCooldown(
+                    oldIsland.getUniqueId(),
+                    targetUUID.toString(),
+                    getSettings().getInviteCooldown() * 60));
         }
     }
 }

@@ -1,6 +1,3 @@
-/**
- *
- */
 package world.bentobox.bentobox.managers;
 
 import static org.junit.Assert.assertEquals;
@@ -27,6 +24,7 @@ import org.bukkit.World;
 import org.bukkit.entity.EntityType;
 import org.bukkit.scheduler.BukkitScheduler;
 import org.eclipse.jdt.annotation.Nullable;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -51,15 +49,27 @@ import world.bentobox.bentobox.util.Util;
 @PrepareForTest( { Bukkit.class, BentoBox.class, Util.class, Location.class })
 public class IslandWorldManagerTest {
 
+    @Mock
     private BentoBox plugin;
+
     private IslandWorldManager iwm;
+
+    @Mock
     private Location location;
+
+    @Mock
     private World world;
+
+    @Mock
     private WorldSettings ws;
+
     @Mock
     private @Nullable World netherWorld;
+
     @Mock
     private @Nullable World endWorld;
+
+    @Mock
     private GameModeAddon gm;
 
     /**
@@ -68,14 +78,12 @@ public class IslandWorldManagerTest {
     @Before
     public void setUp() throws Exception {
         // Set up plugin
-        plugin = mock(BentoBox.class);
         Whitebox.setInternalState(BentoBox.class, "instance", plugin);
         iwm = new IslandWorldManager(plugin);
-        location = mock(Location.class);
         // World
-        world = mock(World.class);
         when(world.getName()).thenReturn("test-world");
         when(world.getEnvironment()).thenReturn(World.Environment.NORMAL);
+        when(world.getMaxHeight()).thenReturn(256);
         when(location.getWorld()).thenReturn(world);
 
         // Scheduler
@@ -89,14 +97,17 @@ public class IslandWorldManagerTest {
         when(fm.getFlags()).thenReturn(new ArrayList<>());
         when(plugin.getFlagsManager()).thenReturn(fm);
         // Gamemode
-        gm = mock(GameModeAddon.class);
-        ws = mock(WorldSettings.class);
         when(ws.getFriendlyName()).thenReturn("friendly");
         when(gm.getWorldSettings()).thenReturn(ws);
         when(gm.getOverWorld()).thenReturn(world);
         when(gm.getNetherWorld()).thenReturn(netherWorld);
         when(gm.getEndWorld()).thenReturn(endWorld);
         iwm.addGameMode(gm);
+    }
+
+    @After
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -230,6 +241,24 @@ public class IslandWorldManagerTest {
      */
     @Test
     public void testGetIslandHeight() {
+        assertEquals(0, iwm.getIslandHeight(world));
+    }
+
+    /**
+     * Test method for {@link world.bentobox.bentobox.managers.IslandWorldManager#getIslandHeight(org.bukkit.World)}.
+     */
+    @Test
+    public void testGetIslandHeightOverMax() {
+        when(ws.getIslandHeight()).thenReturn(500);
+        assertEquals(255, iwm.getIslandHeight(world));
+    }
+
+    /**
+     * Test method for {@link world.bentobox.bentobox.managers.IslandWorldManager#getIslandHeight(org.bukkit.World)}.
+     */
+    @Test
+    public void testGetIslandHeightSubZero() {
+        when(ws.getIslandHeight()).thenReturn(-50);
         assertEquals(0, iwm.getIslandHeight(world));
     }
 
@@ -403,22 +432,6 @@ public class IslandWorldManagerTest {
     }
 
     /**
-     * Test method for {@link world.bentobox.bentobox.managers.IslandWorldManager#isNetherTrees(org.bukkit.World)}.
-     */
-    @Test
-    public void testIsNetherTrees() {
-        assertFalse(iwm.isNetherTrees(netherWorld));
-    }
-
-    /**
-     * Test method for {@link world.bentobox.bentobox.managers.IslandWorldManager#isNetherTrees(org.bukkit.World)}.
-     */
-    @Test
-    public void testIsNetherTreesNull() {
-        assertFalse(iwm.isNetherTrees(null));
-    }
-
-    /**
      * Test method for {@link world.bentobox.bentobox.managers.IslandWorldManager#isDragonSpawn(org.bukkit.World)}.
      */
     @Test
@@ -493,7 +506,7 @@ public class IslandWorldManagerTest {
     @Test
     public void testGetPermissionPrefix() {
         when(ws.getPermissionPrefix()).thenReturn("bsky");
-        assertEquals("bsky", iwm.getPermissionPrefix(world));
+        assertEquals("bsky.", iwm.getPermissionPrefix(world));
     }
 
     /**

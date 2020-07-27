@@ -1,6 +1,7 @@
 package world.bentobox.bentobox.hooks;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
 import net.milkbowl.vault.economy.Economy;
@@ -17,17 +18,21 @@ public class VaultHook extends Hook {
     private Economy economy;
 
     public VaultHook() {
-        super("Vault");
+        super("Vault", Material.GOLD_NUGGET);
     }
 
     @Override
     public boolean hook() {
-        RegisteredServiceProvider<Economy> rsp = Bukkit.getServer().getServicesManager().getRegistration(Economy.class);
-        if (rsp == null) {
+        try {
+            RegisteredServiceProvider<Economy> rsp = Bukkit.getServer().getServicesManager().getRegistration(Economy.class);
+            if (rsp == null) {
+                return false;
+            }
+            economy = rsp.getProvider();
+            return true;
+        } catch (Exception e) {
             return false;
         }
-        economy = rsp.getProvider();
-        return economy != null;
     }
 
     @Override

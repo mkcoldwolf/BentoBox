@@ -1,6 +1,7 @@
 package world.bentobox.bentobox.api.commands.island;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -13,6 +14,11 @@ import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.util.Util;
 
+/**
+ * Unban command
+ * @author tastybento
+ *
+ */
 public class IslandUnbanCommand extends CompositeCommand {
 
     public IslandUnbanCommand(CompositeCommand islandCommand) {
@@ -29,7 +35,7 @@ public class IslandUnbanCommand extends CompositeCommand {
     }
 
     @Override
-    public boolean execute(User user, String label, List<String> args) {
+    public boolean canExecute(User user, String label, List<String> args) {
         if (args.size() != 1) {
             // Show help
             showHelp(this, user);
@@ -42,8 +48,10 @@ public class IslandUnbanCommand extends CompositeCommand {
             return false;
         }
         // Check rank to use command
-        if (getIslands().getIsland(getWorld(), user).getRank(user) < getPlugin().getSettings().getRankCommand(getUsage())) {
-            user.sendMessage("general.errors.no-permission");
+        Island island = getIslands().getIsland(getWorld(), user);
+        int rank = Objects.requireNonNull(island).getRank(user);
+        if (rank < island.getRankCommand(getUsage())) {
+            user.sendMessage("general.errors.insufficient-rank", TextVariables.RANK, user.getTranslation(getPlugin().getRanksManager().getRank(rank)));
             return false;
         }
         // Get target player
@@ -62,12 +70,13 @@ public class IslandUnbanCommand extends CompositeCommand {
             return false;
         }
         // Finished error checking - start the unbanning
-        User targetUser = User.getInstance(targetUUID);
-        return unban(user, targetUser);
+        return true;
     }
 
-    private boolean unban(User issuer, User target) {
-        Island island = getIslands().getIsland(getWorld(), issuer.getUniqueId());
+    @Override
+    public boolean execute(User user, String label, List<String> args) {
+        User target = User.getInstance(getPlayers().getUUID(args.get(0)));
+        Island island = getIslands().getIsland(getWorld(), user.getUniqueId());
 
         // Run the event
         IslandBaseEvent unbanEvent = IslandEvent.builder()
@@ -78,13 +87,13 @@ public class IslandUnbanCommand extends CompositeCommand {
                 .build();
 
         // Event is not cancelled
-        if (!unbanEvent.isCancelled() && island.unban(issuer.getUniqueId(), target.getUniqueId())) {
-            issuer.sendMessage("general.success");
-            target.sendMessage("commands.island.unban.you-are-unbanned", TextVariables.NAME, issuer.getName());
+        if (!unbanEvent.isCancelled() && island.unban(user.getUniqueId(), target.getUniqueId())) {
+            user.sendMessage("commands.island.unban.player-unbanned", TextVariables.NAME, target.getName());
+            target.sendMessage("commands.island.unban.you-are-unbanned", TextVariables.NAME, user.getName());
             // Set cooldown
             if (getSettings().getBanCooldown() > 0 && getParent() != null) {
                 getParent().getSubCommand("ban").ifPresent(subCommand ->
-                        subCommand.setCooldown(issuer.getUniqueId(), target.getUniqueId(), getSettings().getBanCooldown() * 60));
+                subCommand.setCooldown(island.getUniqueId(), target.getUniqueId().toString(), getSettings().getBanCooldown() * 60));
             }
             return true;
         }

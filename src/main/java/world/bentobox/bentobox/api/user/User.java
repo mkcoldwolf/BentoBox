@@ -18,14 +18,18 @@ import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.permissions.PermissionAttachment;
 import org.bukkit.permissions.PermissionAttachmentInfo;
 import org.bukkit.util.Vector;
-
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.addons.Addon;
+import world.bentobox.bentobox.api.events.OfflineMessageEvent;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * Combines {@link Player}, {@link OfflinePlayer} and {@link CommandSender} to provide convenience methods related to
@@ -85,7 +89,7 @@ public class User {
      * @return user - user
      */
     @Nullable
-    public static User getInstance(UUID uuid) {
+    public static User getInstance(@Nullable UUID uuid) {
         if (uuid == null) {
             return null;
         }
@@ -131,6 +135,7 @@ public class User {
     private Player player;
     private OfflinePlayer offlinePlayer;
     private final UUID playerUUID;
+    @Nullable
     private final CommandSender sender;
 
     private Addon addon;
@@ -219,6 +224,7 @@ public class User {
         return offlinePlayer != null;
     }
 
+    @Nullable
     public CommandSender getSender() {
         return sender;
     }
@@ -229,10 +235,37 @@ public class User {
 
     /**
      * @param permission permission string
-     * @return true if permission is empty or if the player has that permission or if the player is op.
+     * @return true if permission is empty or null or if the player has that permission or if the player is op.
      */
-    public boolean hasPermission(String permission) {
-        return permission.isEmpty() || isOp() || sender.hasPermission(permission);
+    public boolean hasPermission(@Nullable String permission) {
+        return permission == null || permission.isEmpty() || isOp() || sender.hasPermission(permission);
+    }
+
+    /**
+     * Removes permission from user
+     * @param name - Name of the permission to remove
+     * @return true if successful
+     * @since 1.5.0
+     */
+    public boolean removePerm(String name) {
+        for (PermissionAttachmentInfo p : player.getEffectivePermissions()) {
+            if (p.getPermission().equals(name) && p.getAttachment() != null) {
+                player.removeAttachment(p.getAttachment());
+                break;
+            }
+        }
+        player.recalculatePermissions();
+        return !player.hasPermission(name);
+    }
+
+    /**
+     * Add a permission to user
+     * @param name - Name of the permission to attach
+     * @return The PermissionAttachment that was just created
+     * @since 1.5.0
+     */
+    public PermissionAttachment addPerm(String name) {
+        return player.addAttachment(plugin, name, true);
     }
 
     public boolean isOnline() {
@@ -261,7 +294,10 @@ public class User {
      * @return max value
      */
     public int getPermissionValue(String permissionPrefix, int defaultValue) {
-        int value = defaultValue;
+        // If requester is console, then return the default value
+        if (!isPlayer()) return defaultValue;
+
+        int value = 0;
 
         // If there is a dot at the end of the permissionPrefix, remove it
         if (permissionPrefix.endsWith(".")) {
@@ -271,14 +307,17 @@ public class User {
         final String permPrefix = permissionPrefix + ".";
 
         List<String> permissions = player.getEffectivePermissions().stream()
+                .filter(PermissionAttachmentInfo::getValue) // Must be a positive permission, not a negative one
                 .map(PermissionAttachmentInfo::getPermission)
                 .filter(permission -> permission.startsWith(permPrefix))
                 .collect(Collectors.toList());
 
+        if (permissions.isEmpty()) return defaultValue;
+
         for (String permission : permissions) {
             if (permission.contains(permPrefix + "*")) {
                 // 'Star' permission
-                return value;
+                return defaultValue;
             } else {
                 String[] spl = permission.split(permPrefix);
                 if (spl.length > 1) {
@@ -310,7 +349,7 @@ public class User {
     public String getTranslation(World world, String reference, String... variables) {
         // Get translation.
         String addonPrefix = plugin.getIWM()
-                .getAddon(world).map(a -> a.getDescription().getName().toLowerCase() + ".").orElse("");
+                .getAddon(world).map(a -> a.getDescription().getName().toLowerCase(Locale.ENGLISH) + ".").orElse("");
         return translate(addonPrefix, reference, variables);
     }
 
@@ -324,7 +363,7 @@ public class User {
      */
     public String getTranslation(String reference, String... variables) {
         // Get addonPrefix
-        String addonPrefix = addon == null ? "" : addon.getDescription().getName().toLowerCase() + ".";
+        String addonPrefix = addon == null ? "" : addon.getDescription().getName().toLowerCase(Locale.ENGLISH) + ".";
         return translate(addonPrefix, reference, variables);
     }
 
@@ -339,14 +378,36 @@ public class User {
             }
         }
 
-        // Then replace variables
-        if (variables.length > 1) {
-            for (int i = 0; i < variables.length; i += 2) {
-                translation = translation.replace(variables[i], variables[i+1]);
-            }
-        }
+        // If this is a prefix, just gather and return the translation
+        if (reference.startsWith("prefixes.")) {
+            return translation;
+        } else {
+            // Replace the prefixes
+            for (String prefix : plugin.getLocalesManager().getAvailablePrefixes(this)) {
+                String prefixTranslation = getTranslation("prefixes." + prefix);
+                // Replace the [gamemode] text variable
+                prefixTranslation = prefixTranslation.replace("[gamemode]", addon != null ? addon.getDescription().getName() : "[gamemode]");
+                // Replace the [friendly_name] text variable
+                prefixTranslation = prefixTranslation.replace("[friendly_name]", getWorld() != null ? plugin.getIWM().getFriendlyName(getWorld()) : "[friendly_name]");
 
-        return ChatColor.translateAlternateColorCodes('&', translation);
+                // Replace the prefix in the actual message
+                translation = translation.replace("[prefix_" + prefix + "]", prefixTranslation);
+            }
+
+            // Then replace variables
+            if (variables.length > 1) {
+                for (int i = 0; i < variables.length; i += 2) {
+                    translation = translation.replace(variables[i], variables[i + 1]);
+                }
+            }
+
+            // Then replace Placeholders, this will only work if this is a player
+            if (player != null) {
+                translation = plugin.getPlaceholdersManager().replacePlaceholders(player, translation);
+            }
+
+            return Util.stripSpaceAfterColorCodes(ChatColor.translateAlternateColorCodes('&', translation));
+        }
     }
 
     /**
@@ -368,8 +429,8 @@ public class User {
      */
     public void sendMessage(String reference, String... variables) {
         String message = getTranslation(reference, variables);
-        if (!ChatColor.stripColor(message).trim().isEmpty() && sender != null) {
-            sender.sendMessage(message);
+        if (!ChatColor.stripColor(message).trim().isEmpty()) {
+            sendRawMessage(message);
         }
     }
 
@@ -380,11 +441,14 @@ public class User {
     public void sendRawMessage(String message) {
         if (sender != null) {
             sender.sendMessage(message);
+        } else {
+            // Offline player fire event
+            Bukkit.getPluginManager().callEvent(new OfflineMessageEvent(this.playerUUID, message));
         }
     }
 
     /**
-     * Sends a message to sender if message is not empty and if the same wasn't sent within the previous {@link Notifier#NOTIFICATION_DELAY} seconds.
+     * Sends a message to sender if message is not empty and if the same wasn't sent within the previous Notifier.NOTIFICATION_DELAY seconds.
      * @param reference - language file reference
      * @param variables - CharSequence target, replacement pairs
      *
@@ -398,7 +462,7 @@ public class User {
     }
 
     /**
-     * Sends a message to sender if message is not empty and if the same wasn't sent within the previous {@link Notifier#NOTIFICATION_DELAY} seconds.
+     * Sends a message to sender if message is not empty and if the same wasn't sent within the previous Notifier.NOTIFICATION_DELAY seconds.
      * @param world - the world the translation should come from
      * @param reference - language file reference
      * @param variables - CharSequence target, replacement pairs
@@ -469,7 +533,15 @@ public class User {
      * @return true if the command was successful, otherwise false
      */
     public boolean performCommand(String command) {
-        return player.performCommand(command);
+        PlayerCommandPreprocessEvent event = new PlayerCommandPreprocessEvent(getPlayer(), command);
+        Bukkit.getPluginManager().callEvent(event);
+
+        // only perform the command, if the event wasn't cancelled by an other plugin:
+        if (!event.isCancelled()) {
+            return getPlayer().performCommand(event.getMessage());
+        }
+        // Cancelled, but it was recognized, so return true
+        return true;
     }
 
     /**
@@ -558,5 +630,4 @@ public class User {
     public void setAddon(Addon addon) {
         this.addon = addon;
     }
-
 }

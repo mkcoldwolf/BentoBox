@@ -1,11 +1,9 @@
-/**
- *
- */
 package world.bentobox.bentobox.api.commands.admin;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -16,10 +14,10 @@ import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.Server;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -76,6 +74,7 @@ public class AdminSetspawnCommandTest {
         when(user.getUniqueId()).thenReturn(uuid);
         when(user.getPlayer()).thenReturn(p);
         when(user.getName()).thenReturn("tastybento");
+        when(user.getLocation()).thenReturn(mock(Location.class));
         User.setPlugin(plugin);
 
         // Parent command has no aliases
@@ -90,10 +89,10 @@ public class AdminSetspawnCommandTest {
 
         // Player has island to begin with
         im = mock(IslandsManager.class);
-        when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(true);
-        when(im.hasIsland(Mockito.any(), Mockito.any(User.class))).thenReturn(true);
-        when(im.isOwner(Mockito.any(),Mockito.any())).thenReturn(true);
-        when(im.getOwner(Mockito.any(),Mockito.any())).thenReturn(uuid);
+        when(im.hasIsland(any(), any(UUID.class))).thenReturn(true);
+        when(im.hasIsland(any(), any(User.class))).thenReturn(true);
+        when(im.isOwner(any(),any())).thenReturn(true);
+        when(im.getOwner(any(),any())).thenReturn(uuid);
         when(plugin.getIslands()).thenReturn(im);
 
 
@@ -104,21 +103,24 @@ public class AdminSetspawnCommandTest {
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        when(lm.get(Mockito.any(), Mockito.any())).thenReturn("mock translation");
+        when(lm.get(any(), any())).thenReturn("mock translation");
         when(plugin.getLocalesManager()).thenReturn(lm);
         // Return the reference (USE THIS IN THE FUTURE)
-        when(user.getTranslation(Mockito.anyString())).thenAnswer((Answer<String>) invocation -> invocation.getArgumentAt(0, String.class));
+        when(user.getTranslation(Mockito.anyString())).thenAnswer((Answer<String>) invocation -> invocation.getArgument(0, String.class));
 
         // Plugin Manager
-        Server server = mock(Server.class);
         PluginManager pim = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pim);
-        when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         // Confirmable command settings
         Settings settings = mock(Settings.class);
         when(settings.getConfirmationTime()).thenReturn(10);
         when(plugin.getSettings()).thenReturn(settings);
+    }
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
     /**
      * Test method for {@link world.bentobox.bentobox.api.commands.admin.AdminSetspawnCommand#AdminSetspawnCommand(world.bentobox.bentobox.api.commands.CompositeCommand)}.
@@ -147,7 +149,7 @@ public class AdminSetspawnCommandTest {
     public void testExecuteUserStringListOfString() {
         Island island = mock(Island.class);
         Optional<Island> oi = Optional.of(island);
-        when(im.getIslandAt(Mockito.any(Location.class))).thenReturn(oi);
+        when(im.getIslandAt(any(Location.class))).thenReturn(oi);
         AdminSetspawnCommand c = new AdminSetspawnCommand(ac);
         assertTrue(c.execute(user, "setspawn", Collections.emptyList()));
         Mockito.verify(user).getTranslation("commands.admin.setspawn.confirmation");
@@ -158,7 +160,7 @@ public class AdminSetspawnCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringNoIsland() {
-        when(im.getIslandAt(Mockito.any(Location.class))).thenReturn(Optional.empty());
+        when(im.getIslandAt(any(Location.class))).thenReturn(Optional.empty());
         AdminSetspawnCommand c = new AdminSetspawnCommand(ac);
         assertFalse(c.execute(user, "setspawn", Collections.emptyList()));
         Mockito.verify(user).sendMessage("commands.admin.setspawn.no-island-here");
@@ -172,7 +174,7 @@ public class AdminSetspawnCommandTest {
         Island island = mock(Island.class);
         when(island.isSpawn()).thenReturn(true);
         Optional<Island> oi = Optional.of(island);
-        when(im.getIslandAt(Mockito.any(Location.class))).thenReturn(oi);
+        when(im.getIslandAt(any(Location.class))).thenReturn(oi);
         AdminSetspawnCommand c = new AdminSetspawnCommand(ac);
         assertTrue(c.execute(user, "setspawn", Collections.emptyList()));
         Mockito.verify(user).sendMessage("commands.admin.setspawn.already-spawn");

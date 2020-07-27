@@ -4,8 +4,10 @@ import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.eclipse.jdt.annotation.NonNull;
 
 import world.bentobox.bentobox.api.events.IslandBaseEvent;
+import world.bentobox.bentobox.blueprints.dataobjects.BlueprintBundle;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.database.objects.IslandDeletion;
 import world.bentobox.bentobox.lists.Flags;
@@ -85,6 +87,13 @@ public class IslandEvent extends IslandBaseEvent {
          */
         LOCK,
         /**
+         * Called before an island is going to be cleared of island members.
+         * This event occurs before resets or other island clearing activities.
+         * Cannot be cancelled.
+         * @since 1.12.0
+         */
+        PRECLEAR,
+        /**
          * Called when a player has been reset and a new island spot allocated
          * but before the island itself has been pasted or the player teleported.
          */
@@ -122,11 +131,51 @@ public class IslandEvent extends IslandBaseEvent {
          * Player was expelled
          * @since 1.4.0
          */
-        EXPEL
+        EXPEL,
+        /**
+         * The island was reserved and now is being pasted.
+         * @since 1.6.0
+         */
+        RESERVED,
+        /**
+         * The island protection range was changed.
+         * @since 1.11.0
+         */
+        RANGE_CHANGE,
+        /**
+         * Event that will fire any time a player's rank changes on an island.
+         * @since 1.13.0
+         */
+        RANK_CHANGE
     }
 
     public static IslandEventBuilder builder() {
         return new IslandEventBuilder();
+    }
+
+    /**
+     * Fired when a player's rank has changed on an island.
+     * Cancellation has no effect.
+     * @since 1.13.0
+     */
+    public static class IslandRankChangeEvent extends IslandBaseEvent {
+
+        private final int oldRank;
+        private final int newRank;
+
+        public IslandRankChangeEvent(Island island, UUID playerUUID, boolean admin, Location location, int oldRank, int newRank) {
+            super(island, playerUUID, admin, location);
+            this.oldRank = oldRank;
+            this.newRank = newRank;
+        }
+
+        public int getOldRank() {
+            return oldRank;
+        }
+
+        public int getNewRank(){
+            return newRank;
+        }
     }
 
     /**
@@ -177,9 +226,27 @@ public class IslandEvent extends IslandBaseEvent {
      *
      */
     public static class IslandCreateEvent extends IslandBaseEvent {
-        private IslandCreateEvent(Island island, UUID player, boolean admin, Location location) {
+        private @NonNull BlueprintBundle blueprintBundle;
+
+        private IslandCreateEvent(Island island, UUID player, boolean admin, Location location, @NonNull BlueprintBundle blueprintBundle) {
             // Final variables have to be declared in the constructor
             super(island, player, admin, location);
+            this.blueprintBundle = blueprintBundle;
+        }
+
+        /**
+         * @since 1.6.0
+         */
+        @NonNull
+        public BlueprintBundle getBlueprintBundle() {
+            return blueprintBundle;
+        }
+
+        /**
+         * @since 1.6.0
+         */
+        public void setBlueprintBundle(@NonNull BlueprintBundle blueprintBundle) {
+            this.blueprintBundle = blueprintBundle;
         }
     }
     /**
@@ -222,7 +289,10 @@ public class IslandEvent extends IslandBaseEvent {
         }
     }
     /**
-     * Fired when an island is deleted.
+     * Fired when island blocks are going to be deleted.
+     * If canceled, the island blocks will not be deleted. Note that by the time this is called
+     * the ownership of the island may have been removed. This event is just for detecting
+     * that the island blocks are going to be removed.
      *
      */
     public static class IslandDeletedEvent extends IslandBaseEvent {
@@ -255,6 +325,16 @@ public class IslandEvent extends IslandBaseEvent {
      */
     public static class IslandRegisteredEvent extends IslandBaseEvent {
         private IslandRegisteredEvent(Island island, UUID player, boolean admin, Location location) {
+            super(island, player, admin, location);
+        }
+    }
+
+    /**
+     * Fired when an island is reserved for a player
+     * @since 1.12.0
+     */
+    public static class IslandReservedEvent extends IslandBaseEvent {
+        private IslandReservedEvent(Island island, UUID player, boolean admin, Location location) {
             super(island, player, admin, location);
         }
     }
@@ -299,14 +379,67 @@ public class IslandEvent extends IslandBaseEvent {
             super(island, player, admin, location);
         }
     }
+
+    /**
+     * Fired before an island has its player data cleared, e.g., just before a reset
+     * @since 1.12.0
+     */
+    public static class IslandPreclearEvent extends IslandBaseEvent {
+        private final @NonNull Island oldIsland;
+
+        private IslandPreclearEvent(Island island, UUID player, boolean admin, Location location, @NonNull Island oldIsland) {
+            // Final variables have to be declared in the constructor
+            super(island, player, admin, location);
+            // Create a copy of the old island
+            this.oldIsland = new Island(oldIsland);
+        }
+
+        /**
+         * @since 1.12.0
+         */
+        @NonNull
+        public Island getOldIsland() {
+            return oldIsland;
+        }
+    }
+
     /**
      * Fired when an island is going to be reset.
      * May be cancelled.
      */
     public static class IslandResetEvent extends IslandBaseEvent {
-        private IslandResetEvent(Island island, UUID player, boolean admin, Location location) {
+        private final @NonNull Island oldIsland;
+        private @NonNull BlueprintBundle blueprintBundle;
+
+        private IslandResetEvent(Island island, UUID player, boolean admin, Location location, @NonNull BlueprintBundle blueprintBundle, @NonNull Island oldIsland) {
             // Final variables have to be declared in the constructor
             super(island, player, admin, location);
+            this.blueprintBundle = blueprintBundle;
+            // Create a copy of the old island
+            this.oldIsland = new Island(oldIsland);
+        }
+
+        /**
+         * @since 1.12.0
+         */
+        @NonNull
+        public Island getOldIsland() {
+            return oldIsland;
+        }
+
+        /**
+         * @since 1.6.0
+         */
+        @NonNull
+        public BlueprintBundle getBlueprintBundle() {
+            return blueprintBundle;
+        }
+
+        /**
+         * @since 1.6.0
+         */
+        public void setBlueprintBundle(@NonNull BlueprintBundle blueprintBundle) {
+            this.blueprintBundle = blueprintBundle;
         }
     }
     /**
@@ -314,9 +447,21 @@ public class IslandEvent extends IslandBaseEvent {
      *
      */
     public static class IslandResettedEvent extends IslandBaseEvent {
-        private IslandResettedEvent(Island island, UUID player, boolean admin, Location location) {
+        private final @NonNull Island oldIsland;
+
+        private IslandResettedEvent(Island island, UUID player, boolean admin, Location location, Island oldIsland) {
             // Final variables have to be declared in the constructor
             super(island, player, admin, location);
+            // Create a copy of the old island
+            this.oldIsland = new Island(oldIsland);
+        }
+
+        /**
+         * @since 1.12.0
+         */
+        @NonNull
+        public Island getOldIsland() {
+            return oldIsland;
         }
     }
     /**
@@ -330,6 +475,77 @@ public class IslandEvent extends IslandBaseEvent {
         }
     }
 
+
+    /**
+     * Fired when island protection range is changed.
+     * @since 1.11.0
+     */
+    public static class IslandProtectionRangeChangeEvent extends IslandBaseEvent {
+        /**
+         * New protection range value.
+         */
+        private int newRange;
+
+        /**
+         * Old protection range value.
+         */
+        private int oldRange;
+
+        /**
+         * Constructor IslandProtectionRangeChange creates a new IslandProtectionRangeChange instance.
+         *
+         * @param island of type Island
+         * @param player of type UUID
+         * @param admin of type boolean
+         * @param location of type Location
+         * @param newRange of type int
+         * @param oldRange of type int
+         */
+        private IslandProtectionRangeChangeEvent(Island island, UUID player, boolean admin, Location location, int newRange, int oldRange) {
+            super(island, player, admin, location);
+            this.newRange = newRange;
+            this.oldRange = oldRange;
+        }
+
+
+        /**
+         * This method returns the newRange value.
+         * @return the value of newRange.
+         */
+        public int getNewRange() {
+            return newRange;
+        }
+
+
+        /**
+         * This method returns the oldRange value.
+         * @return the value of oldRange.
+         */
+        public int getOldRange() {
+            return oldRange;
+        }
+
+
+        /**
+         * This method sets the newRange value.
+         * @param newRange the newRange new value.
+         */
+        public void setNewRange(int newRange) {
+            this.newRange = newRange;
+        }
+
+
+        /**
+         * This method sets the oldRange value.
+         * @param oldRange the oldRange new value.
+         */
+        public void setOldRange(int oldRange) {
+            this.oldRange = oldRange;
+        }
+    }
+
+
+
     public static class IslandEventBuilder {
         // Here field are NOT final. They are just used for the building.
         private Island island;
@@ -338,9 +554,46 @@ public class IslandEvent extends IslandBaseEvent {
         private boolean admin;
         private Location location;
         private IslandDeletion deletedIslandInfo;
+        private BlueprintBundle blueprintBundle;
+
+        /**
+         * Stores new protection range for island.
+         */
+        private int newRange;
+
+        /**
+         * Stores old protection range for island.
+         */
+        private int oldRange;
+
+        /**
+         * Stores old island object
+         * @since 1.12.0
+         */
+        private Island oldIsland;
+
+        /**
+         * @since 1.13.0
+         */
+        private int oldRank;
+
+        /**
+         * @since 1.13.0
+         */
+        private int newRank;
 
         public IslandEventBuilder island(Island island) {
             this.island = island;
+            return this;
+        }
+
+        /**
+         * @param oldIsland old island object
+         * @return IslandEventBuilder
+         * @since 1.12.0
+         */
+        public IslandEventBuilder oldIsland(Island oldIsland) {
+            this.oldIsland = oldIsland;
             return this;
         }
 
@@ -382,78 +635,128 @@ public class IslandEvent extends IslandBaseEvent {
             return this;
         }
 
+        /**
+         * @since 1.6.0
+         */
+        @NonNull
+        public IslandEventBuilder blueprintBundle(@NonNull BlueprintBundle blueprintBundle) {
+            this.blueprintBundle = blueprintBundle;
+            return this;
+        }
+
+
+        /**
+         * Allows to set new and old protection range.
+         * @param newRange New value of protection range.
+         * @param oldRange Old value of protection range.
+         * @since 1.11.0
+         */
+        @NonNull
+        public IslandEventBuilder protectionRange(int newRange, int oldRange) {
+            this.newRange = newRange;
+            this.oldRange = oldRange;
+            return this;
+        }
+
+        /**
+         * @since 1.13.0
+         */
+        @NonNull
+        public IslandEventBuilder rankChange(int oldRank, int newRank){
+            this.oldRank = oldRank;
+            this.newRank = newRank;
+            return this;
+        }
+
         public IslandBaseEvent build() {
             // Call the generic event for developers who just want one event and use the Reason enum
-            Bukkit.getServer().getPluginManager().callEvent(new IslandEvent(island, player, admin, location, reason));
+            Bukkit.getPluginManager().callEvent(new IslandEvent(island, player, admin, location, reason));
             // Generate explicit events
             switch (reason) {
             case EXPEL:
                 IslandExpelEvent expel = new IslandExpelEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(expel);
+                Bukkit.getPluginManager().callEvent(expel);
                 return expel;
             case BAN:
                 IslandBanEvent ban = new IslandBanEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(ban);
+                Bukkit.getPluginManager().callEvent(ban);
                 return ban;
             case CREATE:
-                IslandCreateEvent create = new IslandCreateEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(create);
+                IslandCreateEvent create = new IslandCreateEvent(island, player, admin, location, blueprintBundle);
+                Bukkit.getPluginManager().callEvent(create);
                 return create;
             case CREATED:
                 IslandCreatedEvent created = new IslandCreatedEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(created);
+                Bukkit.getPluginManager().callEvent(created);
                 return created;
             case DELETE:
                 IslandDeleteEvent delete = new IslandDeleteEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(delete);
+                Bukkit.getPluginManager().callEvent(delete);
                 return delete;
             case DELETE_CHUNKS:
                 IslandDeleteChunksEvent deleteChunks = new IslandDeleteChunksEvent(island, player, admin, location, deletedIslandInfo);
-                Bukkit.getServer().getPluginManager().callEvent(deleteChunks);
+                Bukkit.getPluginManager().callEvent(deleteChunks);
                 return deleteChunks;
             case DELETED:
                 IslandDeletedEvent deleted = new IslandDeletedEvent(island, player, admin, location, deletedIslandInfo);
-                Bukkit.getServer().getPluginManager().callEvent(deleted);
+                Bukkit.getPluginManager().callEvent(deleted);
                 return deleted;
             case ENTER:
                 IslandEnterEvent enter = new IslandEnterEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(enter);
+                Bukkit.getPluginManager().callEvent(enter);
                 return enter;
             case EXIT:
                 IslandExitEvent exit = new IslandExitEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(exit);
+                Bukkit.getPluginManager().callEvent(exit);
                 return exit;
             case LOCK:
                 IslandLockEvent lock = new IslandLockEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(lock);
+                Bukkit.getPluginManager().callEvent(lock);
                 return lock;
             case RESET:
-                IslandResetEvent reset = new IslandResetEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(reset);
+                IslandResetEvent reset = new IslandResetEvent(island, player, admin, location, blueprintBundle, oldIsland);
+                Bukkit.getPluginManager().callEvent(reset);
                 return reset;
             case RESETTED:
-                IslandResettedEvent resetted = new IslandResettedEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(resetted);
+                IslandResettedEvent resetted = new IslandResettedEvent(island, player, admin, location, oldIsland);
+                Bukkit.getPluginManager().callEvent(resetted);
                 return resetted;
             case UNBAN:
                 IslandUnbanEvent unban = new IslandUnbanEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(unban);
+                Bukkit.getPluginManager().callEvent(unban);
                 return unban;
             case UNLOCK:
                 IslandUnlockEvent unlock = new IslandUnlockEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(unlock);
+                Bukkit.getPluginManager().callEvent(unlock);
                 return unlock;
             case REGISTERED:
                 IslandRegisteredEvent reg = new IslandRegisteredEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(reg);
+                Bukkit.getPluginManager().callEvent(reg);
                 return reg;
             case UNREGISTERED:
                 IslandUnregisteredEvent unreg = new IslandUnregisteredEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(unreg);
+                Bukkit.getPluginManager().callEvent(unreg);
                 return unreg;
+            case RANGE_CHANGE:
+                IslandProtectionRangeChangeEvent
+                change = new IslandProtectionRangeChangeEvent(island, player, admin, location, newRange, oldRange);
+                Bukkit.getPluginManager().callEvent(change);
+                return change;
+            case PRECLEAR:
+                IslandPreclearEvent preclear = new IslandPreclearEvent(island, player, admin, location, oldIsland);
+                Bukkit.getPluginManager().callEvent(preclear);
+                return preclear;
+            case RESERVED:
+                IslandReservedEvent res = new IslandReservedEvent(island, player, admin, location);
+                Bukkit.getPluginManager().callEvent(res);
+                return res;
+            case RANK_CHANGE:
+                IslandRankChangeEvent rankChange = new IslandRankChangeEvent(island, player, admin, location, oldRank, newRank);
+                Bukkit.getPluginManager().callEvent(rankChange);
+                return rankChange;
             default:
                 IslandGeneralEvent general = new IslandGeneralEvent(island, player, admin, location);
-                Bukkit.getServer().getPluginManager().callEvent(general);
+                Bukkit.getPluginManager().callEvent(general);
                 return general;
             }
         }

@@ -2,7 +2,8 @@ package world.bentobox.bentobox.listeners.flags.protection;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -19,7 +20,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Server;
 import org.bukkit.World;
-import org.bukkit.block.Beacon;
 import org.bukkit.block.BrewingStand;
 import org.bukkit.block.Chest;
 import org.bukkit.block.Dispenser;
@@ -29,6 +29,8 @@ import org.bukkit.block.Hopper;
 import org.bukkit.block.ShulkerBox;
 import org.bukkit.entity.Horse;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Villager;
+import org.bukkit.entity.WanderingTrader;
 import org.bukkit.entity.minecart.StorageMinecart;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
@@ -62,6 +64,7 @@ import world.bentobox.bentobox.managers.FlagsManager;
 import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
+import world.bentobox.bentobox.managers.PlaceholdersManager;
 import world.bentobox.bentobox.util.Util;
 
 /**
@@ -72,8 +75,10 @@ import world.bentobox.bentobox.util.Util;
 @PrepareForTest( {BentoBox.class, Flags.class, Util.class, Bukkit.class} )
 public class InventoryListenerTest {
 
-    private final static List<Class<?>> HOLDERS = Arrays.asList(Horse.class, Chest.class,ShulkerBox.class, StorageMinecart.class, Dispenser.class,
-            Dropper.class, Hopper.class, Furnace.class, BrewingStand.class, Beacon.class);
+    private final static List<Class<?>> HOLDERS = Arrays.asList(Horse.class, Chest.class,ShulkerBox.class, StorageMinecart.class,
+            Dispenser.class,
+            Dropper.class, Hopper.class, Furnace.class, BrewingStand.class,
+            Villager.class, WanderingTrader.class);
 
     private Location location;
     private BentoBox plugin;
@@ -100,14 +105,14 @@ public class InventoryListenerTest {
         when(server.getWorld("world")).thenReturn(world);
         when(server.getVersion()).thenReturn("BSB_Mocking");
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
 
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         ItemMeta meta = mock(ItemMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(meta);
@@ -143,6 +148,11 @@ public class InventoryListenerTest {
         Answer<String> answer = invocation -> (String)Arrays.asList(invocation.getArguments()).get(1);
         when(lm.get(any(), any())).thenAnswer(answer);
 
+        // Placeholders
+        PlaceholdersManager placeholdersManager = mock(PlaceholdersManager.class);
+        when(plugin.getPlaceholdersManager()).thenReturn(placeholdersManager);
+        when(placeholdersManager.replacePlaceholders(any(), any())).thenAnswer(answer);
+
         // World Settings
         WorldSettings ws = mock(WorldSettings.class);
         when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
@@ -175,6 +185,9 @@ public class InventoryListenerTest {
         when(player.getName()).thenReturn("tastybento");
         when(player.getWorld()).thenReturn(world);
 
+        // Util strip spaces
+        when(Util.stripSpaceAfterColorCodes(anyString())).thenCallRealMethod();
+
         // Listener
         l = new InventoryListener();
     }
@@ -184,8 +197,9 @@ public class InventoryListenerTest {
      * @throws java.lang.Exception
      */
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
         User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -284,7 +298,7 @@ public class InventoryListenerTest {
      * Test method for {@link world.bentobox.bentobox.listeners.flags.protection.InventoryListener#onInventoryClick(org.bukkit.event.inventory.InventoryClickEvent)}.
      */
     @Test
-    public void testOnInventoryClickOtherHolder() {
+    public void testOnInventoryClickOtherHolderAllowed() {
         InventoryView view = mock(InventoryView.class);
         when(view.getPlayer()).thenReturn(player);
         Inventory inv = mock(Inventory.class);
@@ -305,7 +319,7 @@ public class InventoryListenerTest {
      * Test method for {@link world.bentobox.bentobox.listeners.flags.protection.InventoryListener#onInventoryClick(org.bukkit.event.inventory.InventoryClickEvent)}.
      */
     @Test
-    public void testOnInventoryClickOtherHolderStillAllowed() {
+    public void testOnInventoryClickOtherHolderNotAllowed() {
         when(island.isAllowed(Mockito.any(), Mockito.any())).thenReturn(false);
         InventoryView view = mock(InventoryView.class);
         when(view.getPlayer()).thenReturn(player);
@@ -320,7 +334,30 @@ public class InventoryListenerTest {
         InventoryAction action = InventoryAction.PICKUP_ONE;
         InventoryClickEvent e = new InventoryClickEvent(view, slotType, 0, ClickType.LEFT, action );
         l.onInventoryClick(e);
+        assertTrue(e.isCancelled());
+    }
+
+    /**
+     * Test method for {@link world.bentobox.bentobox.listeners.flags.protection.InventoryListener#onInventoryClick(org.bukkit.event.inventory.InventoryClickEvent)}.
+     */
+    @Test
+    public void testOnInventoryClickOtherHolderPlayerNotAllowed() {
+        when(island.isAllowed(Mockito.any(), Mockito.any())).thenReturn(false);
+        InventoryView view = mock(InventoryView.class);
+        when(view.getPlayer()).thenReturn(player);
+        Inventory inv = mock(Inventory.class);
+        when(inv.getLocation()).thenReturn(location);
+        when(inv.getSize()).thenReturn(9);
+        InventoryHolder holder = mock(Player.class);
+        when(inv.getHolder()).thenReturn(holder);
+        when(view.getTopInventory()).thenReturn(inv);
+        when(view.getBottomInventory()).thenReturn(inv);
+        SlotType slotType = SlotType.CONTAINER;
+        InventoryAction action = InventoryAction.PICKUP_ONE;
+        InventoryClickEvent e = new InventoryClickEvent(view, slotType, 0, ClickType.LEFT, action );
+        l.onInventoryClick(e);
         assertFalse(e.isCancelled());
     }
+
 
 }

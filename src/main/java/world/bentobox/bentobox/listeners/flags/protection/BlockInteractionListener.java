@@ -1,7 +1,11 @@
 package world.bentobox.bentobox.listeners.flags.protection;
 
+import java.util.Map;
+import java.util.Optional;
+
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
@@ -11,11 +15,14 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+
+import com.google.common.collect.ImmutableMap;
+
+import world.bentobox.bentobox.BentoBox;
+import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.api.flags.FlagListener;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.lists.Flags;
-
-import java.util.Optional;
 
 /**
  * Handle interaction with blocks
@@ -24,94 +31,52 @@ import java.util.Optional;
 public class BlockInteractionListener extends FlagListener {
 
     /**
+     * These cover materials in another server version.
+     * This avoids run time errors due to unknown enum values, at the expense of a string comparison
+     */
+    private final Map<String, String> stringFlags = ImmutableMap.<String, String>builder()
+            .build();
+
+    /**
      * Handle interaction with blocks
      * @param e - event
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPlayerInteract(final PlayerInteractEvent e) {
-        // For some items, we need to do a specific check for RIGHT_CLICK_BLOCK
-        if (e.getAction().equals(Action.RIGHT_CLICK_BLOCK)
-                && e.getClickedBlock().getType().equals(Material.ITEM_FRAME)) {
-            checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.ITEM_FRAME);
-            return;
-        }
-
-        // Otherwise, we just don't care about the RIGHT_CLICK_BLOCK action.
+        // We only care about the RIGHT_CLICK_BLOCK action.
         if (!e.getAction().equals(Action.RIGHT_CLICK_BLOCK)) {
             return;
         }
+
         // Check clicked block
         checkClickedBlock(e, e.getPlayer(), e.getClickedBlock().getLocation(), e.getClickedBlock().getType());
 
         // Now check for in-hand items
-        if (e.getItem() != null) {
-            if (e.getItem().getType().name().contains("BOAT")) {
-                checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.PLACE_BLOCKS);
-                return;
+        if (e.getItem() != null && !e.getItem().getType().equals(Material.AIR)) {
+            // Boats
+            if (e.getItem().getType().name().endsWith("_BOAT")) {
+                checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.BOAT);
             }
-            switch (e.getItem().getType()) {
-            case ENDER_PEARL:
-                checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.ENDER_PEARL);
-                break;
-            case BONE_MEAL:
-                checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.PLACE_BLOCKS);
-                break;
-            case BAT_SPAWN_EGG:
-            case BLAZE_SPAWN_EGG:
-            case CAVE_SPIDER_SPAWN_EGG:
-            case CHICKEN_SPAWN_EGG:
-            case COD_SPAWN_EGG:
-            case COW_SPAWN_EGG:
-            case CREEPER_SPAWN_EGG:
-            case DOLPHIN_SPAWN_EGG:
-            case DONKEY_SPAWN_EGG:
-            case DROWNED_SPAWN_EGG:
-            case ELDER_GUARDIAN_SPAWN_EGG:
-            case ENDERMAN_SPAWN_EGG:
-            case ENDERMITE_SPAWN_EGG:
-            case EVOKER_SPAWN_EGG:
-            case GHAST_SPAWN_EGG:
-            case GUARDIAN_SPAWN_EGG:
-            case HORSE_SPAWN_EGG:
-            case HUSK_SPAWN_EGG:
-            case LLAMA_SPAWN_EGG:
-            case MAGMA_CUBE_SPAWN_EGG:
-            case MOOSHROOM_SPAWN_EGG:
-            case MULE_SPAWN_EGG:
-            case OCELOT_SPAWN_EGG:
-            case PARROT_SPAWN_EGG:
-            case PHANTOM_SPAWN_EGG:
-            case PIG_SPAWN_EGG:
-            case POLAR_BEAR_SPAWN_EGG:
-            case PUFFERFISH_SPAWN_EGG:
-            case RABBIT_SPAWN_EGG:
-            case SALMON_SPAWN_EGG:
-            case SHEEP_SPAWN_EGG:
-            case SHULKER_SPAWN_EGG:
-            case SILVERFISH_SPAWN_EGG:
-            case SKELETON_HORSE_SPAWN_EGG:
-            case SKELETON_SPAWN_EGG:
-            case SLIME_SPAWN_EGG:
-            case SPIDER_SPAWN_EGG:
-            case SQUID_SPAWN_EGG:
-            case STRAY_SPAWN_EGG:
-            case TROPICAL_FISH_SPAWN_EGG:
-            case TURTLE_SPAWN_EGG:
-            case VEX_SPAWN_EGG:
-            case VILLAGER_SPAWN_EGG:
-            case VINDICATOR_SPAWN_EGG:
-            case WITCH_SPAWN_EGG:
-            case WITHER_SKELETON_SPAWN_EGG:
-            case WOLF_SPAWN_EGG:
-            case ZOMBIE_HORSE_SPAWN_EGG:
-            case ZOMBIE_PIGMAN_SPAWN_EGG:
-            case ZOMBIE_SPAWN_EGG:
-            case ZOMBIE_VILLAGER_SPAWN_EGG:
+            // Spawn eggs
+            else if (e.getItem().getType().name().endsWith("_SPAWN_EGG")) {
                 checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.SPAWN_EGGS);
-                break;
-            default:
-                break;
-
+            }
+            // Now check for in-hand items
+            if (e.getItem() != null) {
+                if (e.getItem().getType().name().contains("BOAT")) {
+                    checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.PLACE_BLOCKS);
+                    return;
+                }
+                switch (e.getItem().getType()) {
+                case ENDER_PEARL:
+                    checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.ENDER_PEARL);
+                    break;
+                case BONE_MEAL:
+                    checkIsland(e, e.getPlayer(), e.getClickedBlock().getLocation(), Flags.PLACE_BLOCKS);
+                    break;
+                default:
+                    break;
+                }
             }
         }
     }
@@ -129,56 +94,47 @@ public class BlockInteractionListener extends FlagListener {
             checkIsland(e, player, loc, Flags.CONTAINER);
             return;
         }
-        switch (type) {
-        case ANVIL:
+        if (Tag.ANVIL.isTagged(type)) {
             checkIsland(e, player, loc, Flags.ANVIL);
-            break;
+            return;
+        }
+        if (Tag.BUTTONS.isTagged(type)) {
+            checkIsland(e, player, loc, Flags.BUTTON);
+            return;
+        }
+        if (Tag.BEDS.isTagged(type)) {
+            checkIsland(e, player, loc, Flags.BED);
+            return;
+        }
+        if (Tag.DOORS.isTagged(type)) {
+            checkIsland(e, player, loc, Flags.DOOR);
+            return;
+        }
+        if (Tag.SHULKER_BOXES.isTagged(type)) {
+            checkIsland(e, player, loc, Flags.CONTAINER);
+            return;
+        }
+        if (Tag.TRAPDOORS.isTagged(type)) {
+            checkIsland(e, player, loc, Flags.TRAPDOOR);
+            return;
+        }
+
+        switch (type) {
         case BEACON:
             checkIsland(e, player, loc, Flags.BEACON);
-            break;
-        case BLACK_BED:
-        case BLUE_BED:
-        case BROWN_BED:
-        case CYAN_BED:
-        case GRAY_BED:
-        case GREEN_BED:
-        case LIGHT_BLUE_BED:
-        case LIGHT_GRAY_BED:
-        case LIME_BED:
-        case MAGENTA_BED:
-        case ORANGE_BED:
-        case PINK_BED:
-        case PURPLE_BED:
-        case RED_BED:
-        case WHITE_BED:
-        case YELLOW_BED:
-            checkIsland(e, player, loc, Flags.BED);
             break;
         case BREWING_STAND:
         case CAULDRON:
             checkIsland(e, player, loc, Flags.BREWING);
             break;
+        case BARREL:
+        case BEEHIVE:
+        case BEE_NEST:
         case CHEST:
         case CHEST_MINECART:
         case TRAPPED_CHEST:
-        case BLACK_SHULKER_BOX:
-        case BLUE_SHULKER_BOX:
-        case BROWN_SHULKER_BOX:
-        case CYAN_SHULKER_BOX:
-        case GRAY_SHULKER_BOX:
-        case GREEN_SHULKER_BOX:
-        case LIGHT_BLUE_SHULKER_BOX:
-        case LIME_SHULKER_BOX:
-        case PINK_SHULKER_BOX:
-        case MAGENTA_SHULKER_BOX:
-        case ORANGE_SHULKER_BOX:
-        case PURPLE_SHULKER_BOX:
-        case RED_SHULKER_BOX:
-        case LIGHT_GRAY_SHULKER_BOX:
-        case WHITE_SHULKER_BOX:
-        case YELLOW_SHULKER_BOX:
-        case SHULKER_BOX:
         case FLOWER_POT:
+        case COMPOSTER:
             checkIsland(e, player, loc, Flags.CONTAINER);
             break;
         case DISPENSER:
@@ -191,34 +147,11 @@ public class BlockInteractionListener extends FlagListener {
         case HOPPER_MINECART:
             checkIsland(e, player, loc, Flags.HOPPER);
             break;
-        case ACACIA_DOOR:
-        case BIRCH_DOOR:
-        case DARK_OAK_DOOR:
-        case IRON_DOOR:
-        case JUNGLE_DOOR:
-        case SPRUCE_DOOR:
-        case OAK_DOOR:
-            checkIsland(e, player, loc, Flags.DOOR);
-            break;
-        case ACACIA_TRAPDOOR:
-        case BIRCH_TRAPDOOR:
-        case DARK_OAK_TRAPDOOR:
-        case OAK_TRAPDOOR:
-        case JUNGLE_TRAPDOOR:
-        case SPRUCE_TRAPDOOR:
-        case IRON_TRAPDOOR:
-            checkIsland(e, player, loc, Flags.TRAPDOOR);
-            break;
-        case ACACIA_FENCE_GATE:
-        case BIRCH_FENCE_GATE:
-        case DARK_OAK_FENCE_GATE:
-        case OAK_FENCE_GATE:
-        case JUNGLE_FENCE_GATE:
-        case SPRUCE_FENCE_GATE:
-            checkIsland(e, player, loc, Flags.GATE);
-            break;
+        case BLAST_FURNACE:
+        case CAMPFIRE:
         case FURNACE_MINECART:
         case FURNACE:
+        case SMOKER:
             checkIsland(e, player, loc, Flags.FURNACE);
             break;
         case ENCHANTING_TABLE:
@@ -234,20 +167,16 @@ public class BlockInteractionListener extends FlagListener {
             checkIsland(e, player, loc, Flags.NOTE_BLOCK);
             break;
         case CRAFTING_TABLE:
+        case CARTOGRAPHY_TABLE:
+        case GRINDSTONE:
+        case STONECUTTER:
+        case LOOM:
             checkIsland(e, player, loc, Flags.CRAFTING);
-            break;
-        case STONE_BUTTON:
-        case ACACIA_BUTTON:
-        case BIRCH_BUTTON:
-        case DARK_OAK_BUTTON:
-        case JUNGLE_BUTTON:
-        case OAK_BUTTON:
-        case SPRUCE_BUTTON:
-            checkIsland(e, player, loc, Flags.BUTTON);
             break;
         case LEVER:
             checkIsland(e, player, loc, Flags.LEVER);
             break;
+        case REDSTONE_WIRE:
         case REPEATER:
         case COMPARATOR:
         case DAYLIGHT_DETECTOR:
@@ -262,9 +191,27 @@ public class BlockInteractionListener extends FlagListener {
         case ITEM_FRAME:
             checkIsland(e, player, loc, Flags.ITEM_FRAME);
             break;
-        default:
+        case SWEET_BERRY_BUSH:
+            checkIsland(e, player, loc, Flags.BREAK_BLOCKS);
             break;
-
+        case CAKE:
+            checkIsland(e, player, loc, Flags.CAKE);
+            break;
+        case OAK_FENCE_GATE:
+        case SPRUCE_FENCE_GATE:
+        case BIRCH_FENCE_GATE:
+        case JUNGLE_FENCE_GATE:
+        case DARK_OAK_FENCE_GATE:
+        case ACACIA_FENCE_GATE:
+        case CRIMSON_FENCE_GATE:
+        case WARPED_FENCE_GATE:
+            checkIsland(e, player, loc, Flags.GATE);
+            break;
+        default:
+            if (stringFlags.containsKey(type.name())) {
+                Optional<Flag> f = BentoBox.getInstance().getFlagsManager().getFlag(stringFlags.get(type.name()));
+                f.ifPresent(flag -> checkIsland(e, player, loc, flag));
+            }
         }
     }
 
@@ -298,4 +245,6 @@ public class BlockInteractionListener extends FlagListener {
         Optional<Island> toIsland = getIslands().getProtectedIslandAt(e.getToBlock().getLocation());
         fromIsland.ifPresent(from -> e.setCancelled(toIsland.map(to -> to != from).orElse(true)));
     }
+
+
 }

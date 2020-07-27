@@ -6,7 +6,7 @@ package world.bentobox.bentobox.listeners.flags.worldsettings;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +34,7 @@ import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.PluginManager;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -81,8 +82,7 @@ public class ChestDamageListenerTest {
         when(server.getWorld("world")).thenReturn(world);
         when(server.getVersion()).thenReturn("BSB_Mocking");
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
@@ -90,6 +90,7 @@ public class ChestDamageListenerTest {
         // Bukkit
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         SkullMeta skullMeta = mock(SkullMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(skullMeta);
@@ -110,6 +111,7 @@ public class ChestDamageListenerTest {
         IslandWorldManager iwm = mock(IslandWorldManager.class);
         when(iwm.inWorld(any(World.class))).thenReturn(true);
         when(iwm.inWorld(any(Location.class))).thenReturn(true);
+        when(iwm.getAddon(any())).thenReturn(Optional.empty());
         when(plugin.getIWM()).thenReturn(iwm);
 
         // Monsters and animals
@@ -161,6 +163,12 @@ public class ChestDamageListenerTest {
         when(Util.getWorld(Mockito.any())).thenReturn(mock(World.class));
 
 
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**

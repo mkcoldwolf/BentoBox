@@ -35,7 +35,7 @@ public class AdminWhyCommand extends ConfirmableCommand {
             return false;
         }
         // Get target
-        UUID targetUUID = getPlayers().getUUID(args.get(0));
+        UUID targetUUID = Util.getUUID(args.get(0));
         if (targetUUID == null) {
             user.sendMessage("general.errors.unknown-player", TextVariables.NAME, args.get(0));
             return false;
@@ -48,7 +48,7 @@ public class AdminWhyCommand extends ConfirmableCommand {
         }
         // Determine the debug mode and toggle if required
         boolean newValue = !target.getPlayer().getMetadata(getWorld().getName() + "_why_debug").stream()
-                .filter(p -> p.getOwningPlugin().equals(getPlugin())).findFirst().map(MetadataValue::asBoolean).orElse(false);
+                .filter(p -> getPlugin().equals(p.getOwningPlugin())).findFirst().map(MetadataValue::asBoolean).orElse(false);
         if (newValue) {
             user.sendMessage("commands.admin.why.turning-on", TextVariables.NAME, target.getName());
         } else {
@@ -56,6 +56,9 @@ public class AdminWhyCommand extends ConfirmableCommand {
         }
         // Set the debug meta
         target.getPlayer().setMetadata(getWorld().getName() + "_why_debug", new FixedMetadataValue(getPlugin(), newValue));
+        if (user.isPlayer()) {
+            target.getPlayer().setMetadata(getWorld().getName() + "_why_debug_issuer", new FixedMetadataValue(getPlugin(), user.getUniqueId().toString()));
+        }
         return true;
     }
 

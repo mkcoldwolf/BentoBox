@@ -1,6 +1,7 @@
 package world.bentobox.bentobox.api.commands.island;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -8,6 +9,8 @@ import java.util.stream.Collectors;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.events.IslandBaseEvent;
@@ -18,6 +21,8 @@ import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.util.Util;
 
 public class IslandBanCommand extends CompositeCommand {
+
+    private @Nullable User target;
 
     public IslandBanCommand(CompositeCommand islandCommand) {
         super(islandCommand, "ban");
@@ -33,7 +38,7 @@ public class IslandBanCommand extends CompositeCommand {
     }
 
     @Override
-    public boolean execute(User user, String label, List<String> args) {
+    public boolean canExecute(User user, String label, List<String> args) {
         if (args.size() != 1) {
             // Show help
             showHelp(this, user);
@@ -46,8 +51,10 @@ public class IslandBanCommand extends CompositeCommand {
             return false;
         }
         // Check rank to use command
-        if (getIslands().getIsland(getWorld(), user).getRank(user) < getPlugin().getSettings().getRankCommand(getUsage())) {
-            user.sendMessage("general.errors.no-permission");
+        Island island = getIslands().getIsland(getWorld(), user);
+        int rank = Objects.requireNonNull(island).getRank(user);
+        if (rank < island.getRankCommand(getUsage())) {
+            user.sendMessage("general.errors.insufficient-rank", TextVariables.RANK, user.getTranslation(getPlugin().getRanksManager().getRank(rank)));
             return false;
         }
         // Get target player
@@ -69,20 +76,25 @@ public class IslandBanCommand extends CompositeCommand {
             user.sendMessage("commands.island.ban.player-already-banned");
             return false;
         }
-        if (getSettings().getBanCooldown() > 0 && checkCooldown(user, targetUUID)) {
+        if (getSettings().getBanCooldown() > 0 && checkCooldown(user, island.getUniqueId(), targetUUID.toString())) {
             return false;
         }
-        User target = User.getInstance(targetUUID);
+        target = User.getInstance(targetUUID);
         // Cannot ban ops
-        if (target.hasPermission("admin.noban")) {
+        if (target.isOp() || (target.isOnline() && target.hasPermission(this.getPermissionPrefix() + "admin.noban"))) {
             user.sendMessage("commands.island.ban.cannot-ban");
             return false;
         }
+        return true;
+    }
+
+    @Override
+    public boolean execute(User user, String label, List<String> args) {
         // Finished error checking - start the banning
         return ban(user, target);
     }
 
-    private boolean ban(User issuer, User target) {
+    private boolean ban(@NonNull User issuer, User target) {
         Island island = getIslands().getIsland(getWorld(), issuer.getUniqueId());
 
         // Check if player can ban any more players
@@ -98,11 +110,11 @@ public class IslandBanCommand extends CompositeCommand {
 
             // Event is not cancelled
             if (!banEvent.isCancelled() && island.ban(issuer.getUniqueId(), target.getUniqueId())) {
-                issuer.sendMessage("general.success");
+                issuer.sendMessage("commands.island.ban.player-banned", TextVariables.NAME, target.getName());
                 target.sendMessage("commands.island.ban.owner-banned-you", TextVariables.NAME, issuer.getName());
                 // If the player is online, has an island and on the banned island, move them home immediately
                 if (target.isOnline() && getIslands().hasIsland(getWorld(), target.getUniqueId()) && island.onIsland(target.getLocation())) {
-                    getIslands().homeTeleport(getWorld(), target.getPlayer());
+                    getIslands().homeTeleportAsync(getWorld(), target.getPlayer());
                     island.getWorld().playSound(target.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 1F, 1F);
                 }
                 return true;

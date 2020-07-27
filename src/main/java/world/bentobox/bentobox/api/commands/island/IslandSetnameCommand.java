@@ -29,20 +29,20 @@ public class IslandSetnameCommand extends CompositeCommand {
 
     @Override
     public boolean execute(User user, String label, List<String> args) {
+        // Explain command
+        if (args.isEmpty()) {
+            showHelp(this, user);
+            return false;
+        }
+
         UUID playerUUID = user.getUniqueId();
 
         if (!getIslands().hasIsland(getWorld(), playerUUID)) {
             user.sendMessage("general.errors.no-island");
             return false;
         }
-
         if (!getIslands().isOwner(getWorld(), playerUUID)) {
             user.sendMessage("general.errors.not-owner");
-            return false;
-        }
-        // Explain command
-        if (args.isEmpty()) {
-            showHelp(this, user);
             return false;
         }
 
@@ -50,8 +50,8 @@ public class IslandSetnameCommand extends CompositeCommand {
         String name = String.join(" ", args);
 
         // Check if the name isn't too short or too long
-        if (name.length() < getSettings().getNameMinLength()) {
-            user.sendMessage("commands.island.setname.name-too-short", TextVariables.NUMBER,  String.valueOf(getSettings().getNameMinLength()));
+        if (name.length() < getSettings().getNameMinLength() || ChatColor.stripColor(name).isEmpty()) {
+            user.sendMessage("commands.island.setname.name-too-short", TextVariables.NUMBER, String.valueOf(getSettings().getNameMinLength()));
             return false;
         }
         if (name.length() > getSettings().getNameMaxLength()) {
@@ -59,15 +59,20 @@ public class IslandSetnameCommand extends CompositeCommand {
             return false;
         }
 
-        // Set the name
-        if (user.hasPermission(this.getPermissionPrefix() + ".island.name.format")) {
-            getIslands().getIsland(getWorld(), playerUUID).setName(ChatColor.translateAlternateColorCodes('&', name));
-        } else {
-            getIslands().getIsland(getWorld(), playerUUID).setName(name);
+        // Apply colors
+        if (user.hasPermission(getPermissionPrefix() + "island.name.format")) {
+            name = ChatColor.translateAlternateColorCodes('&', name);
         }
 
-        user.sendMessage("general.success");
+        // Check if the name doesn't already exist in the gamemode
+        if (getSettings().isNameUniqueness() && getIslands().nameExists(getWorld(), name)) {
+            user.sendMessage("commands.island.setname.name-already-exists");
+            return false;
+        }
+
+        // Everything's good!
+        getIslands().getIsland(getWorld(), playerUUID).setName(name);
+        user.sendMessage("commands.island.setname.success", TextVariables.NAME, name);
         return true;
     }
-
 }

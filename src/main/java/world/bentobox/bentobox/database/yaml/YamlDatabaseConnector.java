@@ -13,7 +13,6 @@ import java.io.PrintWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +23,7 @@ import java.util.UUID;
 
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.eclipse.jdt.annotation.NonNull;
 
 import com.google.common.base.Charsets;
 
@@ -41,11 +41,6 @@ public class YamlDatabaseConnector implements DatabaseConnector {
     YamlDatabaseConnector(BentoBox plugin) {
         this.plugin = plugin;
         dataFolder = new File(plugin.getDataFolder(), DATABASE_FOLDER_NAME);
-    }
-
-    @Override
-    public Connection createConnection() {
-        return null; // Not used
     }
 
     @Override
@@ -121,7 +116,7 @@ public class YamlDatabaseConnector implements DatabaseConnector {
         }
     }
 
-    public void saveYamlFile(String data, String tableName, String fileName, Map<String, String> commentMap) {
+    boolean saveYamlFile(String data, String tableName, String fileName, Map<String, String> commentMap) {
         String name = fileName.endsWith(YML) ? fileName : fileName + YML;
         File tableFolder = new File(plugin.getDataFolder(), tableName);
         File file = new File(tableFolder, name);
@@ -132,11 +127,12 @@ public class YamlDatabaseConnector implements DatabaseConnector {
             writer.write(data);
         } catch (IOException e) {
             plugin.logError("Could not save yml file: " + tableName + " " + fileName + " " + e.getMessage());
-            return;
+            return false;
         }
         if (commentMap != null && !commentMap.isEmpty()) {
             commentFile(new File(tableFolder, name), commentMap);
         }
+        return true;
     }
 
     /**
@@ -148,7 +144,7 @@ public class YamlDatabaseConnector implements DatabaseConnector {
         // Run through the file and add in the comments
         File commentedFile = new File(file.getPath() + ".tmp");
         List<String> newFile = new ArrayList<>();
-        try (Scanner scanner = new Scanner(file)) {
+        try (Scanner scanner = new Scanner(file, "UTF-8")) {
             while (scanner.hasNextLine()) {
                 String nextLine = scanner.nextLine();
                 // See if there are any comments in this line
@@ -171,6 +167,7 @@ public class YamlDatabaseConnector implements DatabaseConnector {
             Files.delete(commentedFile.toPath());
         } catch (IOException e1) {
             plugin.logError("Could not comment config file " + file.getName() + " " + e1.getMessage());
+            plugin.logStacktrace(e1);
         }
     }
 
@@ -191,6 +188,7 @@ public class YamlDatabaseConnector implements DatabaseConnector {
     }
 
     @Override
+    @NonNull
     public String getUniqueId(String tableName) {
         UUID uuid = UUID.randomUUID();
         File file = new File(dataFolder, tableName + File.separator + uuid.toString() + YML);
@@ -209,8 +207,16 @@ public class YamlDatabaseConnector implements DatabaseConnector {
     }
 
     @Override
-    public void closeConnection() {
+    public Object createConnection(Class<?> type) {
         // Not used
+        return null;
+    }
+
+
+    @Override
+    public void closeConnection(Class<?> type) {
+        // not used
+
     }
 
 }

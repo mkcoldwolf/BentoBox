@@ -3,7 +3,13 @@ package world.bentobox.bentobox.api.commands.island;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
@@ -15,6 +21,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -28,6 +35,7 @@ import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.Settings;
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.configuration.WorldSettings;
+import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.managers.CommandsManager;
@@ -70,7 +78,7 @@ public class IslandSethomeCommandTest {
 
         // Player
         Player player = mock(Player.class);
-        // Sometimes use Mockito.withSettings().verboseLogging()
+        // Sometimes use withSettings().verboseLogging()
         user = mock(User.class);
         when(user.isOp()).thenReturn(false);
         uuid = UUID.randomUUID();
@@ -78,7 +86,7 @@ public class IslandSethomeCommandTest {
         when(user.getPlayer()).thenReturn(player);
         when(user.getName()).thenReturn("tastybento");
         when(user.getWorld()).thenReturn(mock(World.class));
-        when(user.getTranslation(Mockito.anyString())).thenAnswer(i -> i.getArgumentAt(0, String.class));
+        when(user.getTranslation(anyString())).thenAnswer(i -> i.getArgument(0, String.class));
 
         // Parent command has no aliases
         ic = mock(CompositeCommand.class);
@@ -88,13 +96,13 @@ public class IslandSethomeCommandTest {
 
         // No island for player to begin with (set it later in the tests)
         im = mock(IslandsManager.class);
-        when(im.hasIsland(Mockito.any(), Mockito.any(User.class))).thenReturn(false);
-        when(im.isOwner(Mockito.any(), Mockito.eq(uuid))).thenReturn(false);
+        when(im.hasIsland(any(), any(User.class))).thenReturn(false);
+        when(im.isOwner(any(), eq(uuid))).thenReturn(false);
         when(plugin.getIslands()).thenReturn(im);
 
         // Has team
         PlayersManager pm = mock(PlayersManager.class);
-        when(im.inTeam(Mockito.any(), Mockito.eq(uuid))).thenReturn(true);
+        when(im.inTeam(any(), eq(uuid))).thenReturn(true);
         when(plugin.getPlayers()).thenReturn(pm);
 
         // Server & Scheduler
@@ -105,24 +113,29 @@ public class IslandSethomeCommandTest {
         // Island Banned list initialization
         island = mock(Island.class);
         when(island.getBanned()).thenReturn(new HashSet<>());
-        when(island.isBanned(Mockito.any())).thenReturn(false);
-        when(im.getIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(island);
+        when(island.isBanned(any())).thenReturn(false);
+        when(im.getIsland(any(), any(UUID.class))).thenReturn(island);
 
         // IWM friendly name
         iwm = mock(IslandWorldManager.class);
-        when(iwm.getFriendlyName(Mockito.any())).thenReturn("BSkyBlock");
+        when(iwm.getFriendlyName(any())).thenReturn("BSkyBlock");
         // Not in nether
-        when(iwm.isNether(Mockito.any())).thenReturn(false);
+        when(iwm.isNether(any())).thenReturn(false);
         // Not in end
-        when(iwm.isEnd(Mockito.any())).thenReturn(false);
+        when(iwm.isEnd(any())).thenReturn(false);
         // Number of homes default
-        when(iwm.getMaxHomes(Mockito.any())).thenReturn(3);
+        when(iwm.getMaxHomes(any())).thenReturn(3);
         when(plugin.getIWM()).thenReturn(iwm);
 
         // Number of homes
         PowerMockito.mockStatic(Util.class);
         // 1 home for now
-        when(user.getPermissionValue(Mockito.anyString(), Mockito.anyInt())).thenReturn(1);
+        when(user.getPermissionValue(anyString(), anyInt())).thenReturn(1);
+    }
+
+    @After
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -130,7 +143,8 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testIslandSethomeCommand() {
-        new IslandSethomeCommand(ic);
+        IslandSethomeCommand cmd = new IslandSethomeCommand(ic);
+        assertEquals("sethome", cmd.getName());
     }
 
     /**
@@ -150,11 +164,11 @@ public class IslandSethomeCommandTest {
     @Test
     public void testCanExecuteNoIsland() {
         // Player doesn't have an island and doesn't have a team.
-        when(im.inTeam(Mockito.any(), Mockito.eq(uuid))).thenReturn(false);
+        when(im.inTeam(any(), eq(uuid))).thenReturn(false);
 
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.canExecute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendMessage("general.errors.no-island");
+        verify(user).sendMessage("general.errors.no-island");
     }
 
     /**
@@ -162,12 +176,12 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testCanExecuteNotOnIsland() {
-        when(im.hasIsland(Mockito.any(), Mockito.any(User.class))).thenReturn(true);
-        when(im.locationIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
+        when(im.hasIsland(any(), any(User.class))).thenReturn(true);
+        when(im.locationIsOnIsland(any(), any())).thenReturn(false);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.canExecute(user, "island", Collections.emptyList()));
-        Mockito.verify(user, Mockito.never()).sendMessage("general.errors.no-island");
-        Mockito.verify(user).sendMessage("commands.island.sethome.must-be-on-your-island");
+        verify(user, never()).sendMessage("general.errors.no-island");
+        verify(user).sendMessage("commands.island.sethome.must-be-on-your-island");
     }
 
     /**
@@ -175,12 +189,12 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testCanExecute() {
-        when(im.hasIsland(Mockito.any(), Mockito.any(User.class))).thenReturn(true);
-        when(im.locationIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(true);
+        when(im.hasIsland(any(), any(User.class))).thenReturn(true);
+        when(im.locationIsOnIsland(any(), any())).thenReturn(true);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.canExecute(user, "island", Collections.emptyList()));
-        Mockito.verify(user, Mockito.never()).sendMessage("general.errors.no-island");
-        Mockito.verify(user, Mockito.never()).sendMessage("commands.island.sethome.must-be-on-your-island");
+        verify(user, never()).sendMessage("general.errors.no-island");
+        verify(user, never()).sendMessage("commands.island.sethome.must-be-on-your-island");
     }
 
     /**
@@ -190,7 +204,7 @@ public class IslandSethomeCommandTest {
     public void testExecuteUserStringListOfString() {
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendMessage("commands.island.sethome.home-set");
+        verify(user).sendMessage("commands.island.sethome.home-set");
     }
 
 
@@ -201,7 +215,7 @@ public class IslandSethomeCommandTest {
     public void testExecuteUserStringListOfStringNoMultiHome() {
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.execute(user, "island", Collections.singletonList("3")));
-        Mockito.verify(user).sendMessage("general.errors.no-permission");
+        verify(user).sendMessage("general.errors.no-permission", TextVariables.PERMISSION, "bskyblock.island.maxhomes.[number]");
     }
 
     /**
@@ -209,10 +223,10 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringMultiHomeSuccess() {
-        when(user.getPermissionValue(Mockito.anyString(), Mockito.anyInt())).thenReturn(5);
+        when(user.getPermissionValue(anyString(), anyInt())).thenReturn(5);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.execute(user, "island", Collections.singletonList("3")));
-        Mockito.verify(user).sendMessage("commands.island.sethome.home-set");
+        verify(user).sendMessage("commands.island.sethome.home-set");
     }
 
     /**
@@ -220,10 +234,10 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringMultiHomeTooHigh() {
-        when(user.getPermissionValue(Mockito.anyString(), Mockito.anyInt())).thenReturn(5);
+        when(user.getPermissionValue(anyString(), anyInt())).thenReturn(5);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.execute(user, "island", Collections.singletonList("13")));
-        Mockito.verify(user).sendMessage(Mockito.eq("commands.island.sethome.num-homes"), Mockito.eq("[number]"), Mockito.eq("5"));
+        verify(user).sendMessage(eq("commands.island.sethome.num-homes"), eq("[number]"), eq("5"));
     }
 
     /**
@@ -231,10 +245,10 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringMultiHomeTooLow() {
-        when(user.getPermissionValue(Mockito.anyString(), Mockito.anyInt())).thenReturn(5);
+        when(user.getPermissionValue(anyString(), anyInt())).thenReturn(5);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.execute(user, "island", Collections.singletonList("-3")));
-        Mockito.verify(user).sendMessage(Mockito.eq("commands.island.sethome.num-homes"), Mockito.eq("[number]"), Mockito.eq("5"));
+        verify(user).sendMessage(eq("commands.island.sethome.num-homes"), eq("[number]"), eq("5"));
     }
 
     /**
@@ -242,10 +256,10 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringMultiHomeNAN() {
-        when(user.getPermissionValue(Mockito.anyString(), Mockito.anyInt())).thenReturn(5);
+        when(user.getPermissionValue(anyString(), anyInt())).thenReturn(5);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.execute(user, "island", Collections.singletonList("six")));
-        Mockito.verify(user).sendMessage(Mockito.eq("commands.island.sethome.num-homes"), Mockito.eq("[number]"), Mockito.eq("5"));
+        verify(user).sendMessage(eq("commands.island.sethome.num-homes"), eq("[number]"), eq("5"));
     }
 
     /**
@@ -253,14 +267,14 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringNether() {
-        when(iwm.isNether(Mockito.any())).thenReturn(true);
+        when(iwm.isNether(any())).thenReturn(true);
         WorldSettings ws = mock(WorldSettings.class);
         when(ws.isAllowSetHomeInNether()).thenReturn(true);
         when(ws.isRequireConfirmationToSetHomeInNether()).thenReturn(false);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendMessage("commands.island.sethome.home-set");
+        verify(user).sendMessage("commands.island.sethome.home-set");
     }
 
     /**
@@ -268,14 +282,14 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringNetherNotAllowed() {
-        when(iwm.isNether(Mockito.any())).thenReturn(true);
+        when(iwm.isNether(any())).thenReturn(true);
         WorldSettings ws = mock(WorldSettings.class);
         when(ws.isAllowSetHomeInNether()).thenReturn(false);
         when(ws.isRequireConfirmationToSetHomeInNether()).thenReturn(false);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendMessage("commands.island.sethome.nether.not-allowed");
+        verify(user).sendMessage("commands.island.sethome.nether.not-allowed");
     }
 
     /**
@@ -283,15 +297,15 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringNetherConfirmation() {
-        when(iwm.isNether(Mockito.any())).thenReturn(true);
+        when(iwm.isNether(any())).thenReturn(true);
         WorldSettings ws = mock(WorldSettings.class);
         when(ws.isAllowSetHomeInNether()).thenReturn(true);
         when(ws.isRequireConfirmationToSetHomeInNether()).thenReturn(true);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendRawMessage(Mockito.eq("commands.island.sethome.nether.confirmation"));
-        Mockito.verify(user).sendMessage(Mockito.eq("commands.confirmation.confirm"), Mockito.eq("[seconds]"), Mockito.eq("0"));
+        verify(user).sendRawMessage(eq("commands.island.sethome.nether.confirmation"));
+        verify(user).sendMessage(eq("commands.confirmation.confirm"), eq("[seconds]"), eq("0"));
     }
 
     /**
@@ -299,14 +313,14 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringEnd() {
-        when(iwm.isEnd(Mockito.any())).thenReturn(true);
+        when(iwm.isEnd(any())).thenReturn(true);
         WorldSettings ws = mock(WorldSettings.class);
         when(ws.isAllowSetHomeInTheEnd()).thenReturn(true);
         when(ws.isRequireConfirmationToSetHomeInNether()).thenReturn(false);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendMessage("commands.island.sethome.home-set");
+        verify(user).sendMessage("commands.island.sethome.home-set");
     }
 
     /**
@@ -314,14 +328,14 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringEndNotAllowed() {
-        when(iwm.isEnd(Mockito.any())).thenReturn(true);
+        when(iwm.isEnd(any())).thenReturn(true);
         WorldSettings ws = mock(WorldSettings.class);
         when(ws.isAllowSetHomeInTheEnd()).thenReturn(false);
         when(ws.isRequireConfirmationToSetHomeInTheEnd()).thenReturn(false);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertFalse(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendMessage("commands.island.sethome.the-end.not-allowed");
+        verify(user).sendMessage("commands.island.sethome.the-end.not-allowed");
     }
 
     /**
@@ -329,14 +343,14 @@ public class IslandSethomeCommandTest {
      */
     @Test
     public void testExecuteUserStringListOfStringEndConfirmation() {
-        when(iwm.isEnd(Mockito.any())).thenReturn(true);
+        when(iwm.isEnd(any())).thenReturn(true);
         WorldSettings ws = mock(WorldSettings.class);
         when(ws.isAllowSetHomeInTheEnd()).thenReturn(true);
         when(ws.isRequireConfirmationToSetHomeInTheEnd()).thenReturn(true);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         IslandSethomeCommand isc = new IslandSethomeCommand(ic);
         assertTrue(isc.execute(user, "island", Collections.emptyList()));
-        Mockito.verify(user).sendRawMessage(Mockito.eq("commands.island.sethome.the-end.confirmation"));
-        Mockito.verify(user).sendMessage(Mockito.eq("commands.confirmation.confirm"), Mockito.eq("[seconds]"), Mockito.eq("0"));
+        verify(user).sendRawMessage(eq("commands.island.sethome.the-end.confirmation"));
+        verify(user).sendMessage(eq("commands.confirmation.confirm"), eq("[seconds]"), eq("0"));
     }
 }

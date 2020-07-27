@@ -1,9 +1,7 @@
-/**
- *
- */
 package world.bentobox.bentobox.api.commands.admin.range;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -17,10 +15,13 @@ import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
@@ -38,6 +39,7 @@ import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
 import world.bentobox.bentobox.managers.PlayersManager;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * @author tastybento
@@ -52,6 +54,8 @@ public class AdminRangeResetCommandTest {
     private User user;
     private IslandsManager im;
     private PlayersManager pm;
+    @Mock
+    private PluginManager pim;
 
 
     /**
@@ -62,6 +66,7 @@ public class AdminRangeResetCommandTest {
         // Set up plugin
         BentoBox plugin = mock(BentoBox.class);
         Whitebox.setInternalState(BentoBox.class, "instance", plugin);
+        Util.setPlugin(plugin);
 
         // Command manager
         CommandsManager cm = mock(CommandsManager.class);
@@ -114,16 +119,23 @@ public class AdminRangeResetCommandTest {
         BukkitScheduler sch = mock(BukkitScheduler.class);
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getScheduler()).thenReturn(sch);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        Answer<String> answer = invocation -> invocation.getArgumentAt(1, String.class);
+        Answer<String> answer = invocation -> invocation.getArgument(1, String.class);
 
         when(lm.get(Mockito.any(), Mockito.any())).thenAnswer(answer );
         when(plugin.getLocalesManager()).thenReturn(lm);
 
         // Addon
         when(iwm.getAddon(Mockito.any())).thenReturn(Optional.empty());
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -166,14 +178,27 @@ public class AdminRangeResetCommandTest {
      * Test method for {@link world.bentobox.bentobox.api.commands.admin.range.AdminRangeResetCommand#execute(world.bentobox.bentobox.api.user.User, java.lang.String, java.util.List)}.
      */
     @Test
-    public void testExecuteKnownPlayerNoIsland() {
+    public void testExecuteKnownPlayerNotOwnerNoTeam() {
         when(pm.getUUID(Mockito.anyString())).thenReturn(uuid);
         when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
+        when(im.inTeam(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
         AdminRangeResetCommand arc = new AdminRangeResetCommand(ac);
         List<String> args = new ArrayList<>();
         args.add("tastybento");
         arc.execute(user, "", args);
         Mockito.verify(user).sendMessage("general.errors.player-has-no-island");
+    }
+
+    @Test
+    public void testExecuteKnownPlayerNotOwnerButInTeam() {
+        when(pm.getUUID(Mockito.anyString())).thenReturn(uuid);
+        when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
+        when(im.inTeam(Mockito.any(), Mockito.any(UUID.class))).thenReturn(true);
+        AdminRangeResetCommand arc = new AdminRangeResetCommand(ac);
+        List<String> args = new ArrayList<>();
+        args.add("tastybento");
+        arc.execute(user, "", args);
+        Mockito.verify(user, never()).sendMessage("general.errors.player-has-no-island");
     }
 
     /**

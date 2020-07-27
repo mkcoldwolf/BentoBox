@@ -8,16 +8,16 @@ import java.net.URLClassLoader;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
-import org.bukkit.Bukkit;
-import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.permissions.PermissionDefault;
 import org.bukkit.plugin.InvalidDescriptionException;
-import org.bukkit.util.permissions.DefaultPermissions;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
 
+import world.bentobox.bentobox.api.addons.exceptions.InvalidAddonDescriptionException;
 import world.bentobox.bentobox.api.addons.exceptions.InvalidAddonFormatException;
 import world.bentobox.bentobox.api.addons.exceptions.InvalidAddonInheritException;
 import world.bentobox.bentobox.managers.AddonsManager;
@@ -36,6 +36,7 @@ public class AddonClassLoader extends URLClassLoader {
             throws InvalidAddonInheritException,
             MalformedURLException,
             InvalidDescriptionException,
+            InvalidAddonDescriptionException,
             InstantiationException,
             IllegalAccessException, InvocationTargetException, NoSuchMethodException {
         super(new URL[]{path.toURI().toURL()}, parent);
@@ -45,6 +46,9 @@ public class AddonClassLoader extends URLClassLoader {
         Class<?> javaClass;
         try {
             String mainClass = data.getString("main");
+            if (mainClass == null) {
+                throw new InvalidAddonFormatException("addon.yml does not define a main class!");
+            }
             javaClass = Class.forName(mainClass, true, this);
             if(mainClass.startsWith("world.bentobox.bentobox")){
                 throw new InvalidAddonFormatException("Package declaration cannot start with 'world.bentobox.bentobox'");
@@ -62,39 +66,43 @@ public class AddonClassLoader extends URLClassLoader {
 
         addon = addonClass.getDeclaredConstructor().newInstance();
         addon.setDescription(asDescription(data));
-        // Set permissions
-        if (data.isConfigurationSection("permissions")) {
-            ConfigurationSection perms = data.getConfigurationSection("permissions");
-            perms.getKeys(true).forEach(perm -> {
-                if (perms.contains(perm + ".default") && perms.contains(perm + ".description")) {
-                    registerPermission(perms, perm);
-                }
-            });
-        }
     }
 
-    private void registerPermission(ConfigurationSection perms, String perm) {
-        PermissionDefault pd = PermissionDefault.getByName(perms.getString(perm + ".default"));
-        if (pd == null) {
-            Bukkit.getLogger().severe("Permission default is invalid : " + perms.getName());
-            return;
-        }
-        String desc = perms.getString(perm + ".description");
-        DefaultPermissions.registerPermission(perm, desc, pd);
-    }
 
+
+    /**
+     * Converts the addon.yml to an AddonDescription
+     * @param data - yaml config (addon.yml)
+     * @return Addon Description
+     * @throws InvalidAddonDescriptionException - if there's a bug in the addon.yml
+     */
     @NonNull
-    private AddonDescription asDescription(YamlConfiguration data) {
+    private AddonDescription asDescription(YamlConfiguration data) throws InvalidAddonDescriptionException {
         AddonDescription.Builder builder = new AddonDescription.Builder(data.getString("main"), data.getString("name"), data.getString("version"))
                 .authors(data.getString("authors"))
                 .metrics(data.getBoolean("metrics", true))
                 .repository(data.getString("repository", ""));
 
-        if (data.getString("depend") != null) {
-            builder.dependencies(Arrays.asList(data.getString("depend").split("\\s*,\\s*")));
+        String depend = data.getString("depend");
+        if (depend != null) {
+            builder.dependencies(Arrays.asList(depend.split("\\s*,\\s*")));
         }
-        if (data.getString("softdepend") != null) {
-            builder.softDependencies(Arrays.asList(data.getString("softdepend").split("\\s*,\\s*")));
+        String softDepend = data.getString("softdepend");
+        if (softDepend != null) {
+            builder.softDependencies(Arrays.asList(softDepend.split("\\s*,\\s*")));
+        }
+        builder.icon(Material.getMaterial(data.getString("icon", "PAPER")));
+
+        String apiVersion = data.getString("api-version");
+        if (apiVersion != null) {
+            if (!apiVersion.matches("^(\\d+\\.)?(\\d+\\.)?(\\*|\\d+)$")) {
+                throw new InvalidAddonDescriptionException("Provided API version '" + apiVersion + "' is not valid. It must only contain digits and dots and not end with a dot.");
+            }
+            builder.apiVersion(apiVersion);
+        }
+        // Set permissions
+        if (data.isConfigurationSection("permissions")) {
+            builder.permissions(Objects.requireNonNull(data.getConfigurationSection("permissions")));
         }
 
         return builder.build();
@@ -130,7 +138,6 @@ public class AddonClassLoader extends URLClassLoader {
                     result = super.findClass(name);
                 } catch (ClassNotFoundException | NoClassDefFoundError e) {
                     // Do nothing.
-                    result = null;
                 }
                 if (result != null) {
                     loader.setClass(name, result);
@@ -147,6 +154,13 @@ public class AddonClassLoader extends URLClassLoader {
      */
     public Addon getAddon() {
         return addon;
+    }
+
+    /**
+     * @return class list
+     */
+    public Set<String> getClasses() {
+        return classes.keySet();
     }
 
 }

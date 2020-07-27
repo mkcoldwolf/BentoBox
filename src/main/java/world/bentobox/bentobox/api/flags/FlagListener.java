@@ -1,6 +1,7 @@
 package world.bentobox.bentobox.api.flags;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -79,7 +80,7 @@ public abstract class FlagListener implements Listener {
      * @param flag - the flag that has been checked
      */
     public void noGo(@NonNull Event e, @NonNull Flag flag) {
-        noGo(e, flag, false);
+        noGo(e, flag, false, "protection.protected");
     }
 
     /**
@@ -87,14 +88,15 @@ public abstract class FlagListener implements Listener {
      * @param e - event
      * @param flag - the flag that has been checked
      * @param silent - if true, message is not sent
+     * @param string - translation reference
      */
-    public void noGo(@NonNull Event e, @NonNull Flag flag, boolean silent) {
+    public void noGo(@NonNull Event e, @NonNull Flag flag, boolean silent, String string) {
         if (e instanceof Cancellable) {
             ((Cancellable)e).setCancelled(true);
         }
         if (user != null) {
             if (!silent) {
-                user.notify("protection.protected", TextVariables.DESCRIPTION, user.getTranslation(flag.getHintReference()));
+                user.notify(string, TextVariables.DESCRIPTION, user.getTranslation(flag.getHintReference()));
             }
             user.updateInventory();
         }
@@ -153,7 +155,8 @@ public abstract class FlagListener implements Listener {
         // Protection flag
 
         // Ops or "bypass everywhere" moderators can do anything
-        if (user.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + ".mod.bypass." + flag.getID() + ".everywhere")) {
+        if (user.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + "mod.bypassprotect")
+                || user.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + "mod.bypass." + flag.getID() + ".everywhere")) {
             if (user.isOp()) {
                 report(user, e, loc, flag,  Why.OP);
             } else {
@@ -169,7 +172,7 @@ public abstract class FlagListener implements Listener {
                 return true;
             }
             report(user, e, loc, flag,  Why.NOT_ALLOWED_IN_WORLD);
-            noGo(e, flag, silent);
+            noGo(e, flag, silent, "protection.world-protected");
             return false;
         }
 
@@ -181,12 +184,12 @@ public abstract class FlagListener implements Listener {
             if (island.get().isAllowed(user, flag)) {
                 report(user, e, loc, flag,  Why.RANK_ALLOWED);
                 return true;
-            } else if (user.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + ".mod.bypass." + flag.getID() + ".island")) {
+            } else if (user.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + "mod.bypass." + flag.getID() + ".island")) {
                 report(user, e, loc, flag,  Why.BYPASS_ISLAND);
                 return true;
             }
             report(user, e, loc, flag,  Why.NOT_ALLOWED_ON_ISLAND);
-            noGo(e, flag, silent);
+            noGo(e, flag, silent, island.get().isSpawn() ? "protection.spawn-protected" : "protection.protected");
             return false;
         }
         // The player is in the world, but not on an island, so general world settings apply
@@ -195,17 +198,31 @@ public abstract class FlagListener implements Listener {
             return true;
         } else {
             report(user, e, loc, flag,  Why.NOT_ALLOWED_IN_WORLD);
-            noGo(e, flag, silent);
+            noGo(e, flag, silent, "protection.world-protected");
             return false;
         }
     }
 
     private void report(@Nullable User user, @NonNull Event e, @NonNull Location loc, @NonNull Flag flag, @NonNull Why why) {
         // A quick way to debug flag listener unit tests is to add this line here: System.out.println(why.name()); NOSONAR
-        if (user != null && user.getPlayer().getMetadata(loc.getWorld().getName() + "_why_debug").stream()
+        if (user != null && user.isPlayer() && user.getPlayer().getMetadata(loc.getWorld().getName() + "_why_debug").stream()
                 .filter(p -> p.getOwningPlugin().equals(getPlugin())).findFirst().map(MetadataValue::asBoolean).orElse(false)) {
-            plugin.log("Why: " + e.getEventName() + " in world " + loc.getWorld().getName() + " at " + Util.xyz(loc.toVector()));
-            plugin.log("Why: " + user.getName() + " " + flag.getID() + " - " + why.name());
+            String whyEvent = "Why: " + e.getEventName() + " in world " + loc.getWorld().getName() + " at " + Util.xyz(loc.toVector());
+            String whyBypass = "Why: " + user.getName() + " " + flag.getID() + " - " + why.name();
+
+            plugin.log(whyEvent);
+            plugin.log(whyBypass);
+
+            // See if there is a player that issued the debug
+            String issuerUUID = user.getPlayer().getMetadata(loc.getWorld().getName() + "_why_debug_issuer").stream()
+                    .filter(p -> getPlugin().equals(p.getOwningPlugin())).findFirst().map(MetadataValue::asString).orElse("");
+            if (!issuerUUID.isEmpty()) {
+                User issuer = User.getInstance(UUID.fromString(issuerUUID));
+                if (issuer != null && issuer.isPlayer()) {
+                    user.sendRawMessage(whyEvent);
+                    user.sendRawMessage(whyBypass);
+                }
+            }
         }
     }
 

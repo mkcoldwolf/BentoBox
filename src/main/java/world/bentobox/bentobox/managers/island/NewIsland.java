@@ -1,25 +1,22 @@
 package world.bentobox.bentobox.managers.island;
 
 import java.io.IOException;
-import java.util.EnumMap;
-import java.util.Map;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
 import org.bukkit.util.Vector;
-import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.BStats;
 import world.bentobox.bentobox.BentoBox;
+import world.bentobox.bentobox.api.addons.GameModeAddon;
 import world.bentobox.bentobox.api.events.IslandBaseEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent.Reason;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
-import world.bentobox.bentobox.util.Util;
+import world.bentobox.bentobox.managers.BlueprintsManager;
 
 /**
  * Create and paste a new island
@@ -27,31 +24,32 @@ import world.bentobox.bentobox.util.Util;
  *
  */
 public class NewIsland {
-    private static final Integer MAX_UNOWNED_ISLANDS = 10;
     private BentoBox plugin;
     private Island island;
     private final User user;
     private final Reason reason;
     private final World world;
-    private final String name;
+    private String name;
     private final boolean noPaste;
+    private GameModeAddon addon;
 
-    private enum Result {
-        ISLAND_FOUND,
-        BLOCK_AT_CENTER,
-        BLOCKS_IN_AREA,
-        FREE
-    }
+    private NewIslandLocationStrategy locationStrategy;
 
-    private NewIsland(Island oldIsland, User user, Reason reason, World world, String name, boolean noPaste) {
-        super();
+    public NewIsland(Builder builder) throws IOException {
         plugin = BentoBox.getInstance();
-        this.user = user;
-        this.reason = reason;
-        this.world = world;
-        this.name = name;
-        this.noPaste = noPaste;
-        newIsland(oldIsland);
+        this.user = builder.user2;
+        this.reason = builder.reason2;
+        this.world = builder.world2;
+        this.name = builder.name2;
+        this.noPaste = builder.noPaste2;
+        this.addon = builder.addon2;
+        this.locationStrategy = builder.locationStrategy2;
+
+        if (this.locationStrategy == null) {
+            this.locationStrategy = new DefaultNewIslandLocationStrategy();
+        }
+
+        newIsland(builder.oldIsland2);
     }
 
     /**
@@ -78,8 +76,10 @@ public class NewIsland {
         private User user2;
         private Reason reason2;
         private World world2;
-        private String name2 = "island";
+        private String name2 = BlueprintsManager.DEFAULT_BUNDLE_NAME;
         private boolean noPaste2;
+        private GameModeAddon addon2;
+        private NewIslandLocationStrategy locationStrategy2;
 
         public Builder oldIsland(Island oldIsland) {
             this.oldIsland2 = oldIsland;
@@ -93,18 +93,30 @@ public class NewIsland {
             return this;
         }
 
+        /**
+         * Sets the reason
+         * @param reason reason, can only be {@link Reason#CREATE} or {@link Reason#RESET}.
+         */
         public Builder reason(Reason reason) {
+            if (!reason.equals(Reason.CREATE) && !reason.equals(Reason.RESET)) {
+                throw new IllegalArgumentException("Reason must be CREATE or RESET.");
+            }
             this.reason2 = reason;
             return this;
         }
 
-        public Builder world(World world) {
-            this.world2 = world;
+        /**
+         * Set the addon
+         * @param addon a game mode addon
+         */
+        public Builder addon(GameModeAddon addon) {
+            this.addon2 = addon;
+            this.world2 = addon.getOverWorld();
             return this;
         }
 
         /**
-         * No schematics will be pasted
+         * No blocks will be pasted
          */
         public Builder noPaste() {
             this.noPaste2 = true;
@@ -112,7 +124,7 @@ public class NewIsland {
         }
 
         /**
-         * @param name - filename of schematic
+         * @param name - name of Blueprint bundle
          */
         public Builder name(String name) {
             this.name2 = name;
@@ -120,54 +132,98 @@ public class NewIsland {
         }
 
         /**
+         * @param strategy - the location strategy to use
+         * @since 1.8.0
+         */
+        public Builder locationStrategy(NewIslandLocationStrategy strategy) {
+            this.locationStrategy2 = strategy;
+            return this;
+        }
+
+        /**
          * @return Island
-         * @throws IOException - if there are insufficient parameters defined
+         * @throws IOException - if there are insufficient parameters, i.e., no user
          */
         public Island build() throws IOException {
             if (user2 != null) {
-                NewIsland newIsland = new NewIsland(oldIsland2, user2, reason2, world2, name2, noPaste2);
+                NewIsland newIsland = new NewIsland(this);
                 return newIsland.getIsland();
             }
-            throw new IOException("Insufficient parameters. Must have a schematic and a player");
+            throw new IOException("Insufficient parameters. Must have a user!");
         }
     }
 
     /**
      * Makes an island.
-     * @param oldIsland
+     * @param oldIsland old island that is being replaced, if any
+     * @throws IOException - if an island cannot be made. Message is the tag to show the user.
      */
-    public void newIsland(Island oldIsland) {
-        Location next = getNextIsland();
+    public void newIsland(Island oldIsland) throws IOException {
+        Location next = null;
+        if (plugin.getIslands().hasIsland(world, user)) {
+            // Island exists, it just needs pasting
+            island = plugin.getIslands().getIsland(world, user);
+            if (island != null && island.isReserved()) {
+                next = island.getCenter();
+                // Clear the reservation
+                island.setReserved(false);
+            } else {
+                // This should never happen unless we allow another way to paste over islands without reserving
+                plugin.logError("New island for user " + user.getName() + " was not reserved!");
+            }
+        }
+        // If the reservation fails, then we need to make a new island anyway
         if (next == null) {
-            plugin.logError("Failed to make island - no unoccupied spot found");
-            return;
+            next = this.locationStrategy.getNextLocation(world);
+            if (next == null) {
+                plugin.logError("Failed to make island - no unoccupied spot found.");
+                plugin.logError("If the world was imported, try multiple times until all unowned islands are known.");
+                throw new IOException("commands.island.create.cannot-create-island");
+            }
+            // Add to the grid
+            island = plugin.getIslands().createIsland(next, user.getUniqueId());
+            if (island == null) {
+                plugin.logError("Failed to make island! Island could not be added to the grid.");
+                throw new IOException("commands.island.create.unable-create-island");
+            }
         }
-        // Add to the grid
-        island = plugin.getIslands().createIsland(next, user.getUniqueId());
-        if (island == null) {
-            plugin.logError("Failed to make island! Island could not be added to the grid.");
-            return;
-        }
-
         // Clear any old home locations (they should be clear, but just in case)
         plugin.getPlayers().clearHomeLocations(world, user.getUniqueId());
-
         // Set home location
         plugin.getPlayers().setHomeLocation(user, new Location(next.getWorld(), next.getX() + 0.5D, next.getY(), next.getZ() + 0.5D), 1);
-
+        // Reset deaths
+        if (plugin.getIWM().isDeathsResetOnNewIsland(world)) {
+            plugin.getPlayers().setDeaths(world, user.getUniqueId(), 0);
+        }
+        // Check if owner has a different range permission than the island size
+        island.setProtectionRange(user.getPermissionValue(plugin.getIWM().getAddon(island.getWorld())
+                .map(GameModeAddon::getPermissionPrefix).orElse("") + "island.range", island.getProtectionRange()));
         // Save the player so that if the server crashes weird things won't happen
         plugin.getPlayers().save(user.getUniqueId());
-
         // Fire event
         IslandBaseEvent event = IslandEvent.builder()
                 .involvedPlayer(user.getUniqueId())
                 .reason(reason)
                 .island(island)
                 .location(island.getCenter())
+                .blueprintBundle(plugin.getBlueprintsManager().getBlueprintBundles(addon).get(name))
+                .oldIsland(oldIsland)
                 .build();
         if (event.isCancelled()) {
             return;
         }
+        // Get the new BlueprintBundle if it was changed
+        switch (reason) {
+        case CREATE:
+            name = ((IslandEvent.IslandCreateEvent) event).getBlueprintBundle().getUniqueId();
+            break;
+        case RESET:
+            name = ((IslandEvent.IslandResetEvent) event).getBlueprintBundle().getUniqueId();
+            break;
+        default:
+            break;
+        }
+
         // Task to run after creating the island
         Runnable task = () -> {
             // Set initial spawn point if one exists
@@ -176,54 +232,27 @@ public class NewIsland {
             }
             // Stop the player from falling or moving if they are
             if (user.isOnline()) {
-                user.getPlayer().setVelocity(new Vector(0,0,0));
-                user.getPlayer().setFallDistance(0F);
-
-                // Teleport player after this island is built
-                plugin.getIslands().homeTeleport(world, user.getPlayer(), true);
+                if (reason.equals(Reason.RESET) || (reason.equals(Reason.CREATE) && plugin.getIWM().isTeleportPlayerToIslandUponIslandCreation(world))) {
+                    user.getPlayer().setVelocity(new Vector(0, 0, 0));
+                    user.getPlayer().setFallDistance(0F);
+                    // Teleport player after this island is built
+                    plugin.getIslands().homeTeleportAsync(world, user.getPlayer(), true).thenRun(() -> tidyUp(oldIsland));
+                    return;
+                } else {
+                    // let's send him a message so that he knows he can teleport to his island!
+                    user.sendMessage("commands.island.create.you-can-teleport-to-your-island");
+                }
             } else {
                 // Remove the player again to completely clear the data
                 User.removePlayer(user.getPlayer());
             }
-            // Delete old island
-            if (oldIsland != null) {
-                // Delete the old island
-                plugin.getIslands().deleteIsland(oldIsland, true);
-            }
-
-            // Fire exit event
-            Reason reasonDone = Reason.CREATED;
-            switch (reason) {
-            case CREATE:
-                reasonDone = Reason.CREATED;
-                break;
-            case RESET:
-                reasonDone = Reason.RESETTED;
-                break;
-            default:
-                break;
-            }
-            IslandEvent.builder()
-            .involvedPlayer(user.getUniqueId())
-            .reason(reasonDone)
-            .island(island)
-            .location(island.getCenter())
-            .build();
+            tidyUp(oldIsland);
         };
         if (noPaste) {
             Bukkit.getScheduler().runTask(plugin, task);
         } else {
-            // Create island
-            plugin.getSchemsManager().paste(world, island, name, task);
-            // Make nether island
-            if (plugin.getIWM().isNetherGenerate(world) && plugin.getIWM().isNetherIslands(world) && plugin.getIWM().getNetherWorld(world) != null) {
-                plugin.getSchemsManager().paste(plugin.getIWM().getNetherWorld(world), island, "nether-" + name);
-            }
-
-            // Make end island
-            if (plugin.getIWM().isEndGenerate(world) && plugin.getIWM().isEndIslands(world) && plugin.getIWM().getEndWorld(world) != null) {
-                plugin.getSchemsManager().paste(plugin.getIWM().getEndWorld(world), island, "end-" + name);
-            }
+            // Create islands
+            plugin.getBlueprintsManager().paste(addon, island, name, task);
         }
         // Set default settings
         island.setFlagsDefaults();
@@ -232,105 +261,32 @@ public class NewIsland {
         plugin.getIslands().save(island);
     }
 
-    /**
-     * Get the location of next free island spot
-     * @return Location of island spot or null if one cannot be found
-     */
-    @Nullable
-    private Location getNextIsland() {
-        Location last = plugin.getIslands().getLast(world);
-        if (last == null) {
-            last = new Location(world,
-                    (double) plugin.getIWM().getIslandXOffset(world) + plugin.getIWM().getIslandStartX(world),
-                    plugin.getIWM().getIslandHeight(world),
-                    (double) plugin.getIWM().getIslandZOffset(world) + plugin.getIWM().getIslandStartZ(world));
-        }
-        // Find a free spot
-        Map<Result, Integer> result = new EnumMap<>(Result.class);
-        Result r = isIsland(last);
-        while (!r.equals(Result.FREE) && result.getOrDefault(Result.BLOCK_AT_CENTER, 0) < MAX_UNOWNED_ISLANDS) {
-            last = nextGridLocation(last);
-            result.merge(r, 1, (k,v) -> v++);
-            r = isIsland(last);
-        }
-        if (!r.equals(Result.FREE)) {
-            // We could not find a free spot within the limit required. It's likely this world is not empty
-            plugin.logError("Could not find a free spot for islands! Is this world empty?");
-            plugin.logError("Blocks at center locations: " + result.getOrDefault(Result.BLOCK_AT_CENTER, 0) + " max " + MAX_UNOWNED_ISLANDS);
-            plugin.logError("Blocks around center locations: " + result.getOrDefault(Result.BLOCKS_IN_AREA, 0) + " max " + MAX_UNOWNED_ISLANDS);
-            plugin.logError("Known islands: " + result.getOrDefault(Result.ISLAND_FOUND, 0) + " max unlimited.");
-            return null;
-        }
-        plugin.getIslands().setLast(last);
-        return last;
-    }
-
-    /**
-     * Checks if there is an island or blocks at this location
-     * @param location - the location
-     * @return true if island found, null if blocks found, false if nothing found
-     */
-    private Result isIsland(Location location){
-        location = Util.getClosestIsland(location);
-        if (plugin.getIslands().getIslandAt(location).isPresent() || plugin.getIslandDeletionManager().inDeletion(location)) {
-            return Result.ISLAND_FOUND;
+    private void tidyUp(Island oldIsland) {
+        // Delete old island
+        if (oldIsland != null && !plugin.getSettings().isKeepPreviousIslandOnReset()) {
+            // Delete the old island
+            plugin.getIslands().deleteIsland(oldIsland, true, user.getUniqueId());
         }
 
-        if (!plugin.getIWM().isUseOwnGenerator(location.getWorld())) {
-            // Block check
-            if (!location.getBlock().isEmpty() && !location.getBlock().getType().equals(Material.WATER)) {
-                plugin.getIslands().createIsland(location);
-                return Result.BLOCK_AT_CENTER;
-            }
-            // Look around
-            for (int x = -5; x <= 5; x++) {
-                for (int y = 10; y < location.getWorld().getMaxHeight(); y++) {
-                    for (int z = -5; z <= 5; z++) {
-                        if (!location.getWorld().getBlockAt(x + location.getBlockX(), y, z + location.getBlockZ()).isEmpty()
-                                && !location.getWorld().getBlockAt(x + location.getBlockX(), y, z + location.getBlockZ()).getType().equals(Material.WATER)) {
-                            plugin.getIslands().createIsland(location);
-                            return Result.BLOCKS_IN_AREA;
-                        }
-                    }
-                }
-            }
+        // Fire exit event
+        Reason reasonDone = Reason.CREATED;
+        switch (reason) {
+        case CREATE:
+            reasonDone = Reason.CREATED;
+            break;
+        case RESET:
+            reasonDone = Reason.RESETTED;
+            break;
+        default:
+            break;
         }
-        return Result.FREE;
-    }
+        IslandEvent.builder()
+        .involvedPlayer(user.getUniqueId())
+        .reason(reasonDone)
+        .island(island)
+        .location(island.getCenter())
+        .oldIsland(oldIsland)
+        .build();
 
-
-    /**
-     * Finds the next free island spot based off the last known island Uses
-     * island_distance setting from the config file Builds up in a grid fashion
-     *
-     * @param lastIsland - last island location
-     * @return Location of next free island
-     */
-    private Location nextGridLocation(final Location lastIsland) {
-        int x = lastIsland.getBlockX();
-        int z = lastIsland.getBlockZ();
-        int d = plugin.getIWM().getIslandDistance(lastIsland.getWorld()) * 2;
-        if (x < z) {
-            if (-1 * x < z) {
-                lastIsland.setX(lastIsland.getX() + d);
-                return lastIsland;
-            }
-            lastIsland.setZ(lastIsland.getZ() + d);
-            return lastIsland;
-        }
-        if (x > z) {
-            if (-1 * x >= z) {
-                lastIsland.setX(lastIsland.getX() - d);
-                return lastIsland;
-            }
-            lastIsland.setZ(lastIsland.getZ() - d);
-            return lastIsland;
-        }
-        if (x <= 0) {
-            lastIsland.setZ(lastIsland.getZ() + d);
-            return lastIsland;
-        }
-        lastIsland.setZ(lastIsland.getZ() - d);
-        return lastIsland;
     }
 }

@@ -1,6 +1,3 @@
-/**
- *
- */
 package world.bentobox.bentobox.api.commands.admin.range;
 
 import static org.mockito.Mockito.mock;
@@ -13,6 +10,7 @@ import java.util.UUID;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -31,6 +29,7 @@ import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
 import world.bentobox.bentobox.managers.PlayersManager;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * @author tastybento
@@ -52,6 +51,7 @@ public class AdminRangeDisplayCommandTest {
         // Set up plugin
         BentoBox plugin = mock(BentoBox.class);
         Whitebox.setInternalState(BentoBox.class, "instance", plugin);
+        Util.setPlugin(plugin);
 
         // Command manager
         CommandsManager cm = mock(CommandsManager.class);
@@ -103,9 +103,15 @@ public class AdminRangeDisplayCommandTest {
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        Answer<String> answer = invocation -> invocation.getArgumentAt(1, String.class);
-            when(lm.get(Mockito.any(), Mockito.any())).thenAnswer(answer );
-            when(plugin.getLocalesManager()).thenReturn(lm);
+        Answer<String> answer = invocation -> invocation.getArgument(1, String.class);
+        when(lm.get(Mockito.any(), Mockito.any())).thenAnswer(answer );
+        when(plugin.getLocalesManager()).thenReturn(lm);
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**

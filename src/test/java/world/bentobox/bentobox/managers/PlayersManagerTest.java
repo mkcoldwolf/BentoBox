@@ -1,6 +1,3 @@
-/**
- *
- */
 package world.bentobox.bentobox.managers;
 
 import static org.junit.Assert.assertEquals;
@@ -9,7 +6,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -32,7 +29,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
@@ -43,6 +39,7 @@ import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.Settings;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.Database;
+import world.bentobox.bentobox.database.DatabaseSetup.DatabaseType;
 import world.bentobox.bentobox.database.objects.Players;
 import world.bentobox.bentobox.util.Util;
 
@@ -51,7 +48,7 @@ import world.bentobox.bentobox.util.Util;
  *
  */
 @RunWith(PowerMockRunner.class)
-@PrepareForTest({Bukkit.class, BentoBox.class, User.class, Util.class, Logger.class})
+@PrepareForTest({Bukkit.class, BentoBox.class, User.class, Util.class, Logger.class, Database.class})
 public class PlayersManagerTest {
 
     private BentoBox plugin;
@@ -61,12 +58,12 @@ public class PlayersManagerTest {
     private World world;
     private World nether;
     private World end;
-    @Mock
     private Database<Players> db;
 
     /**
      * @throws java.lang.Exception
      */
+    @SuppressWarnings("unchecked")
     @Before
     public void setUp() throws Exception {
         // Clear any lingering database
@@ -79,10 +76,13 @@ public class PlayersManagerTest {
         IslandWorldManager iwm = mock(IslandWorldManager.class);
         world = mock(World.class);
         when(world.getName()).thenReturn("world");
+        when(world.getEnvironment()).thenReturn(World.Environment.NORMAL);
         nether = mock(World.class);
         when(nether.getName()).thenReturn("world_nether");
+        when(nether.getEnvironment()).thenReturn(World.Environment.NETHER);
         end = mock(World.class);
         when(end.getName()).thenReturn("world_the_end");
+        when(end.getEnvironment()).thenReturn(World.Environment.THE_END);
         when(iwm.inWorld(any(World.class))).thenReturn(true);
         when(iwm.inWorld(any(Location.class))).thenReturn(true);
         when(plugin.getIWM()).thenReturn(iwm);
@@ -90,6 +90,7 @@ public class PlayersManagerTest {
         // Settings
         Settings s = mock(Settings.class);
         when(plugin.getSettings()).thenReturn(s);
+        when(s.getDatabaseType()).thenReturn(DatabaseType.JSON);
 
         // Set up spawn
         Location netherSpawn = mock(Location.class);
@@ -140,6 +141,8 @@ public class PlayersManagerTest {
         // Normally in world
         Util.setPlugin(plugin);
 
+        // Database
+        db = mock(Database.class);
     }
 
     @After
@@ -153,6 +156,7 @@ public class PlayersManagerTest {
             .map(Path::toFile)
             .forEach(File::delete);
         }
+        Mockito.framework().clearInlineMocks();
     }
 
     /**

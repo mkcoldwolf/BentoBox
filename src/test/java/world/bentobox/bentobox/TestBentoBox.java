@@ -6,7 +6,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -37,11 +37,11 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.PluginManager;
+import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Matchers;
 import org.mockito.Mockito;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
@@ -93,13 +93,14 @@ public class TestBentoBox {
         Mockito.when(server.getVersion()).thenReturn("BentoBox_Mocking");
 
         PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
 
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pluginManager);
 
         SkullMeta skullMeta = mock(SkullMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(skullMeta);
@@ -117,7 +118,7 @@ public class TestBentoBox {
         visitorToIsland = mock(Player.class);
         Mockito.when(player.hasPermission(Mockito.anyString())).thenReturn(true);
         User.getInstance(player);
-        when(Bukkit.getPlayer(Mockito.any(UUID.class))).thenReturn(player);
+        when(Bukkit.getPlayer(any(UUID.class))).thenReturn(player);
 
         location = mock(Location.class);
         Mockito.when(location.getWorld()).thenReturn(world);
@@ -146,9 +147,9 @@ public class TestBentoBox {
         when(iwm.inWorld(any(World.class))).thenReturn(true);
         when(iwm.inWorld(any(Location.class))).thenReturn(true);
         PowerMockito.mockStatic(Util.class);
-        when(Util.getWorld(Mockito.any())).thenReturn(world);
+        when(Util.getWorld(any())).thenReturn(world);
         // We want the read tabLimit call here
-        when(Util.tabLimit(Mockito.any(), Mockito.anyString())).thenCallRealMethod();
+        when(Util.tabLimit(any(), Mockito.anyString())).thenCallRealMethod();
 
         // Islands
         IslandsManager im = mock(IslandsManager.class);
@@ -162,12 +163,18 @@ public class TestBentoBox {
         members.put(OWNER_UUID, RanksManager.OWNER_RANK);
         members.put(MEMBER_UUID, RanksManager.MEMBER_RANK);
         island.setMembers(members);
-        Mockito.when(im.getIslandAt(Matchers.any())).thenReturn(Optional.of(island));
-        when(im.getProtectedIslandAt(Mockito.any())).thenReturn(Optional.of(island));
+        Mockito.when(im.getIslandAt(any())).thenReturn(Optional.of(island));
+        when(im.getProtectedIslandAt(any())).thenReturn(Optional.of(island));
 
         Settings settings = mock(Settings.class);
         Mockito.when(plugin.getSettings()).thenReturn(settings);
         Mockito.when(settings.getFakePlayers()).thenReturn(new HashSet<>());
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     @Test

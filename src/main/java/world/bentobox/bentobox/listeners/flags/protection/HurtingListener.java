@@ -1,8 +1,15 @@
 package world.bentobox.bentobox.listeners.flags.protection;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.WeakHashMap;
+
 import org.bukkit.Material;
+import org.bukkit.entity.AbstractVillager;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Firework;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Parrot;
 import org.bukkit.entity.Player;
@@ -12,18 +19,19 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
+import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.LingeringPotionSplashEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.potion.PotionEffect;
+
 import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.api.flags.FlagListener;
 import world.bentobox.bentobox.lists.Flags;
 import world.bentobox.bentobox.util.Util;
-
-import java.util.HashMap;
+import world.bentobox.bentobox.versions.ServerCompatibility;
 
 
 /**
@@ -33,7 +41,8 @@ import java.util.HashMap;
  */
 public class HurtingListener extends FlagListener {
 
-    private HashMap<Integer, Player> thrownPotions = new HashMap<>();
+    private Map<Integer, Player> thrownPotions = new HashMap<>();
+    private Map<Entity, Entity> firedFireworks = new WeakHashMap<>();
 
     /**
      * Handles mob and monster protection
@@ -45,7 +54,7 @@ public class HurtingListener extends FlagListener {
         // Mobs being hurt
         if (Util.isPassiveEntity(e.getEntity())) {
             respond(e, e.getDamager(), Flags.HURT_ANIMALS);
-        } else if (e.getEntity() instanceof Villager) {
+        } else if (e.getEntity() instanceof Villager || e.getEntityType().name().equals("WANDERING_TRADER")) { // TODO: Simplify when 1.13.2 support is dropped
             respond(e, e.getDamager(), Flags.HURT_VILLAGERS);
         } else if (Util.isHostileEntity(e.getEntity())) {
             respond(e, e.getDamager(), Flags.HURT_MONSTERS);
@@ -67,7 +76,6 @@ public class HurtingListener extends FlagListener {
             Projectile p = (Projectile) damager;
             if (p.getShooter() instanceof Player && !checkIsland(e, (Player)p.getShooter(), damager.getLocation(), flag)) {
                 e.getEntity().setFireTicks(0);
-                damager.remove();
             }
         }
     }
@@ -83,8 +91,8 @@ public class HurtingListener extends FlagListener {
         }
 
         if ((Util.isPassiveEntity(e.getCaught()) && checkIsland(e, e.getPlayer(), e.getCaught().getLocation(), Flags.HURT_ANIMALS))
-            || (Util.isHostileEntity(e.getCaught()) && checkIsland(e, e.getPlayer(), e.getCaught().getLocation(), Flags.HURT_MONSTERS))
-            || (e.getCaught() instanceof Villager && checkIsland(e, e.getPlayer(), e.getCaught().getLocation(), Flags.HURT_VILLAGERS))) {
+                || (Util.isHostileEntity(e.getCaught()) && checkIsland(e, e.getPlayer(), e.getCaught().getLocation(), Flags.HURT_MONSTERS))
+                || (e.getCaught() instanceof AbstractVillager && checkIsland(e, e.getPlayer(), e.getCaught().getLocation(), Flags.HURT_VILLAGERS))) {
             e.getHook().remove();
         }
 
@@ -138,7 +146,7 @@ public class HurtingListener extends FlagListener {
                 }
 
                 // Villagers being hurt
-                if (entity instanceof Villager && !checkIsland(e, attacker, entity.getLocation(), Flags.HURT_VILLAGERS)) {
+                if (entity instanceof AbstractVillager && !checkIsland(e, attacker, entity.getLocation(), Flags.HURT_VILLAGERS)) {
                     for (PotionEffect effect : e.getPotion().getEffects()) {
                         entity.removePotionEffect(effect.getType());
                     }
@@ -153,6 +161,12 @@ public class HurtingListener extends FlagListener {
      */
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled=true)
     public void onLingeringPotionSplash(final LingeringPotionSplashEvent e) {
+        // TODO Switch this to 1.13 when we move to 1.14 officially
+        if (!ServerCompatibility.getInstance().isVersion(ServerCompatibility.ServerVersion.V1_14, ServerCompatibility.ServerVersion.V1_14_1)) {
+            // We're disabling this check for non-1.14 servers.
+            return;
+        }
+
         // Try to get the shooter
         Projectile projectile = e.getEntity();
         if (projectile.getShooter() instanceof Player) {
@@ -166,23 +180,43 @@ public class HurtingListener extends FlagListener {
     public void onLingeringPotionDamage(final EntityDamageByEntityEvent e) {
         if (e.getCause().equals(DamageCause.ENTITY_ATTACK) && thrownPotions.containsKey(e.getDamager().getEntityId())) {
             Player attacker = thrownPotions.get(e.getDamager().getEntityId());
-            // Self damage
-            if (attacker == null || attacker.equals(e.getEntity())) {
-                return;
-            }
-            Entity entity = e.getEntity();
-            // Monsters being hurt
-            if (Util.isHostileEntity(entity)) {
-                checkIsland(e, attacker, entity.getLocation(), Flags.HURT_MONSTERS);
-            }
-            // Mobs being hurt
-            if (Util.isPassiveEntity(entity)) {
-                checkIsland(e, attacker, entity.getLocation(), Flags.HURT_ANIMALS);
-            }
-            // Villagers being hurt
-            if (entity instanceof Villager) {
-                checkIsland(e, attacker, entity.getLocation(), Flags.HURT_VILLAGERS);
-            }
+            processDamage(e, attacker);
+        }
+    }
+
+    private void processDamage(EntityDamageByEntityEvent e, Player attacker) {
+        // Self damage
+        if (attacker == null || attacker.equals(e.getEntity())) {
+            return;
+        }
+        Entity entity = e.getEntity();
+        // Monsters being hurt
+        if (Util.isHostileEntity(entity)) {
+            checkIsland(e, attacker, entity.getLocation(), Flags.HURT_MONSTERS);
+        }
+        // Mobs being hurt
+        if (Util.isPassiveEntity(entity)) {
+            checkIsland(e, attacker, entity.getLocation(), Flags.HURT_ANIMALS);
+        }
+        // Villagers being hurt
+        if (entity instanceof AbstractVillager) {
+            checkIsland(e, attacker, entity.getLocation(), Flags.HURT_VILLAGERS);
+        }
+
+    }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled=true)
+    public void onFireworkDamage(final EntityDamageByEntityEvent e) {
+        if (e.getDamager() instanceof Firework && firedFireworks.containsKey(e.getDamager())) {
+            processDamage(e, (Player)firedFireworks.get(e.getDamager()));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled=true)
+    public void onPlayerShootEvent(final EntityShootBowEvent e) {
+        // Only care about players shooting fireworks
+        if (e.getEntityType().equals(EntityType.PLAYER) && (e.getProjectile() instanceof Firework)) {
+            firedFireworks.put(e.getProjectile(), e.getEntity());
         }
     }
 }

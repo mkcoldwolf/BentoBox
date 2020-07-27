@@ -2,7 +2,8 @@ package world.bentobox.bentobox.listeners.flags.protection;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -30,6 +31,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.WitherSkeleton;
 import org.bukkit.entity.Zombie;
+import org.bukkit.event.Event.Result;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
@@ -38,10 +40,10 @@ import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.PluginManager;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Matchers;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
@@ -60,6 +62,7 @@ import world.bentobox.bentobox.managers.FlagsManager;
 import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
+import world.bentobox.bentobox.managers.PlaceholdersManager;
 import world.bentobox.bentobox.managers.PlayersManager;
 import world.bentobox.bentobox.util.Util;
 
@@ -67,9 +70,9 @@ import world.bentobox.bentobox.util.Util;
 @PrepareForTest( {BentoBox.class, Flags.class, Util.class, Bukkit.class} )
 public class TNTListenerTest {
 
-    private static Location location;
-    private static BentoBox plugin;
-    private static Notifier notifier;
+    private Location location;
+    private BentoBox plugin;
+    private Notifier notifier;
 
     @Before
     public void setUp() {
@@ -83,14 +86,14 @@ public class TNTListenerTest {
         when(server.getWorld("world")).thenReturn(world);
         when(server.getVersion()).thenReturn("BSB_Mocking");
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
 
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         SkullMeta skullMeta = mock(SkullMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(skullMeta);
@@ -139,6 +142,11 @@ public class TNTListenerTest {
         Answer<String> answer = invocation -> (String)Arrays.asList(invocation.getArguments()).get(1);
         when(lm.get(any(), any())).thenAnswer(answer);
 
+        // Placeholders
+        PlaceholdersManager placeholdersManager = mock(PlaceholdersManager.class);
+        when(plugin.getPlaceholdersManager()).thenReturn(placeholdersManager);
+        when(placeholdersManager.replacePlaceholders(any(), any())).thenAnswer(answer);
+
         // Player name
         PlayersManager pm = mock(PlayersManager.class);
         when(pm.getName(Mockito.any())).thenReturn("tastybento");
@@ -167,6 +175,14 @@ public class TNTListenerTest {
         // Addon
         when(iwm.getAddon(Mockito.any())).thenReturn(Optional.empty());
 
+        // Util strip spaces
+        when(Util.stripSpaceAfterColorCodes(anyString())).thenCallRealMethod();
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     @Test
@@ -183,7 +199,7 @@ public class TNTListenerTest {
         TNTListener listener = new TNTListener();
         listener.setPlugin(plugin);
         listener.onTNTPriming(e);
-        assertTrue(e.isCancelled());
+        assertTrue(e.useInteractedBlock().equals(Result.DENY));
         Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq("protection.protected"));
     }
 
@@ -213,7 +229,7 @@ public class TNTListenerTest {
         IslandsManager im = mock(IslandsManager.class);
         when(plugin.getIslands()).thenReturn(im);
         Island island = mock(Island.class);
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.of(island));
+        when(im.getIslandAt(any())).thenReturn(Optional.of(island));
         when(im.getProtectedIslandAt(Mockito.any())).thenReturn(Optional.of(island));
 
         // Block on fire

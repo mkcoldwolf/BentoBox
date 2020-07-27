@@ -5,7 +5,8 @@ package world.bentobox.bentobox.listeners.flags.protection;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -50,6 +51,7 @@ import world.bentobox.bentobox.managers.FlagsManager;
 import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
+import world.bentobox.bentobox.managers.PlaceholdersManager;
 import world.bentobox.bentobox.util.Util;
 
 
@@ -86,14 +88,14 @@ public class ThrowingListenerTest {
         when(server.getWorld("world")).thenReturn(world);
         when(server.getVersion()).thenReturn("BSB_Mocking");
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
 
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         ItemMeta meta = mock(ItemMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(meta);
@@ -128,6 +130,11 @@ public class ThrowingListenerTest {
         when(plugin.getLocalesManager()).thenReturn(lm);
         Answer<String> answer = invocation -> (String)Arrays.asList(invocation.getArguments()).get(1);
         when(lm.get(any(), any())).thenAnswer(answer);
+
+        // Placeholders
+        PlaceholdersManager placeholdersManager = mock(PlaceholdersManager.class);
+        when(plugin.getPlaceholdersManager()).thenReturn(placeholdersManager);
+        when(placeholdersManager.replacePlaceholders(any(), any())).thenAnswer(answer);
 
         // World Settings
         WorldSettings ws = mock(WorldSettings.class);
@@ -164,11 +171,14 @@ public class ThrowingListenerTest {
         when(player.getName()).thenReturn("tastybento");
         when(player.getWorld()).thenReturn(world);
 
+        // Util strip spaces
+        when(Util.stripSpaceAfterColorCodes(anyString())).thenCallRealMethod();
     }
 
     @After
-    public void cleanUp() {
+    public void tearDown() {
         User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**

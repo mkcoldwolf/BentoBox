@@ -13,10 +13,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
-import org.bukkit.Server;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -28,6 +28,7 @@ import org.powermock.reflect.Whitebox;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.commands.CompositeCommand;
+import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.managers.CommandsManager;
@@ -35,6 +36,7 @@ import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
 import world.bentobox.bentobox.managers.PlayersManager;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * @author tastybento
@@ -60,6 +62,7 @@ public class AdminTeamAddCommandTest {
         // Set up plugin
         plugin = mock(BentoBox.class);
         Whitebox.setInternalState(BentoBox.class, "instance", plugin);
+        Util.setPlugin(plugin);
 
         // Command manager
         CommandsManager cm = mock(CommandsManager.class);
@@ -103,6 +106,9 @@ public class AdminTeamAddCommandTest {
         BukkitScheduler sch = mock(BukkitScheduler.class);
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getScheduler()).thenReturn(sch);
+        // Plugin Manager
+        PluginManager pim = mock(PluginManager.class);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
@@ -117,14 +123,13 @@ public class AdminTeamAddCommandTest {
         // Addon
         when(iwm.getAddon(Mockito.any())).thenReturn(Optional.empty());
 
-        // Plugin Manager
-        Server server = mock(Server.class);
-        PluginManager pim = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pim);
-        when(Bukkit.getServer()).thenReturn(server);
-
     }
 
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
+    }
 
     /**
      * Test method for {@link AdminTeamAddCommand#execute(User, String, List)}.
@@ -304,7 +309,7 @@ public class AdminTeamAddCommandTest {
         // Success
         assertTrue(itl.execute(user, itl.getLabel(), Arrays.asList(name)));
         Mockito.verify(im).setJoinTeam(Mockito.eq(island), Mockito.eq(notUUID));
-        Mockito.verify(user).sendMessage(Mockito.eq("general.success"));
+        Mockito.verify(user).sendMessage("commands.admin.team.add.success", TextVariables.NAME, name[1], "[owner]", name[0]);
     }
 
 }

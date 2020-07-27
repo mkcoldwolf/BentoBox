@@ -2,7 +2,7 @@ package world.bentobox.bentobox.listeners.flags.protection;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -27,10 +27,11 @@ import org.bukkit.event.block.BlockSpreadEvent;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.plugin.PluginManager;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Matchers;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.powermock.api.mockito.PowerMockito;
 import org.powermock.core.classloader.annotations.PrepareForTest;
@@ -39,6 +40,7 @@ import org.powermock.reflect.Whitebox;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.Settings;
+import world.bentobox.bentobox.api.addons.GameModeAddon;
 import world.bentobox.bentobox.api.configuration.WorldSettings;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
@@ -56,9 +58,15 @@ public class FireListenerTest {
 
     private Location location;
     private BentoBox plugin;
+    @Mock
+    private World world;
+
+    private Map<String, Boolean> worldFlags = new HashMap<>();
 
     @Before
     public void setUp() {
+        worldFlags.clear();
+
         PowerMockito.mockStatic(Bukkit.class);
         // Set up plugin
         plugin = mock(BentoBox.class);
@@ -70,8 +78,8 @@ public class FireListenerTest {
         when(server.getWorld("world")).thenReturn(world);
         when(server.getVersion()).thenReturn("BSB_Mocking");
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
@@ -126,11 +134,20 @@ public class FireListenerTest {
         // World Settings
         WorldSettings ws = mock(WorldSettings.class);
         when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
-        Map<String, Boolean> worldFlags = new HashMap<>();
+
         when(ws.getWorldFlags()).thenReturn(worldFlags);
+        GameModeAddon gma = mock(GameModeAddon.class);
+        Optional<GameModeAddon> opGma = Optional.of(gma );
+        when(iwm.getAddon(any())).thenReturn(opGma);
 
         PowerMockito.mockStatic(Util.class);
         when(Util.getWorld(Mockito.any())).thenReturn(mock(World.class));
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     @Test
@@ -139,7 +156,7 @@ public class FireListenerTest {
         IslandsManager im = mock(IslandsManager.class);
         when(plugin.getIslands()).thenReturn(im);
         Island island = mock(Island.class);
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.of(island));
+        when(im.getIslandAt(any())).thenReturn(Optional.of(island));
 
         // Block on fire
         Block block = mock(Block.class);
@@ -167,12 +184,12 @@ public class FireListenerTest {
         assertFalse(listener.checkFire(e, location, Flags.FLINT_AND_STEEL));
 
         // Check with no island
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.empty());
+        when(im.getIslandAt(any())).thenReturn(Optional.empty());
         // Fire is not allowed, so should be cancelled
         Flags.FLINT_AND_STEEL.setDefaultSetting(false);
         assertTrue(listener.checkFire(e, location, Flags.FLINT_AND_STEEL));
         // Fire allowed
-        Flags.FLINT_AND_STEEL.setDefaultSetting(true);
+        Flags.FLINT_AND_STEEL.setDefaultSetting(world, true);
         assertFalse(listener.checkFire(e, location, Flags.FLINT_AND_STEEL));
     }
 
@@ -182,7 +199,7 @@ public class FireListenerTest {
         IslandsManager im = mock(IslandsManager.class);
         when(plugin.getIslands()).thenReturn(im);
         Island island = mock(Island.class);
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.of(island));
+        when(im.getIslandAt(any())).thenReturn(Optional.of(island));
 
         // Block on fire
         Block block = mock(Block.class);
@@ -210,10 +227,12 @@ public class FireListenerTest {
         assertFalse(listener.onBlockBurn(e));
 
         // Check with no island
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.empty());
+        e = new BlockBurnEvent(block, block);
+        when(im.getIslandAt(any())).thenReturn(Optional.empty());
         // Fire is not allowed, so should be cancelled
         Flags.FIRE_BURNING.setDefaultSetting(false);
-        assertTrue(listener.onBlockBurn(e));
+        listener.onBlockBurn(e);
+        assertTrue(e.isCancelled());
         // Fire allowed
         Flags.FIRE_BURNING.setDefaultSetting(true);
         assertFalse(listener.onBlockBurn(e));
@@ -225,7 +244,7 @@ public class FireListenerTest {
         IslandsManager im = mock(IslandsManager.class);
         when(plugin.getIslands()).thenReturn(im);
         Island island = mock(Island.class);
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.of(island));
+        when(im.getIslandAt(any())).thenReturn(Optional.of(island));
 
         // Block on fire spread
 
@@ -258,7 +277,7 @@ public class FireListenerTest {
         assertFalse(listener.onBlockSpread(e));
 
         // Check with no island
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.empty());
+        when(im.getIslandAt(any())).thenReturn(Optional.empty());
         // Fire spread is not allowed, so should be cancelled
         Flags.FIRE_SPREAD.setDefaultSetting(false);
         assertTrue(listener.onBlockSpread(e));
@@ -273,7 +292,7 @@ public class FireListenerTest {
         IslandsManager im = mock(IslandsManager.class);
         when(plugin.getIslands()).thenReturn(im);
         Island island = mock(Island.class);
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.of(island));
+        when(im.getIslandAt(any())).thenReturn(Optional.of(island));
 
         // Block on fire spread
 
@@ -310,7 +329,7 @@ public class FireListenerTest {
         assertFalse(listener.onBlockIgnite(e));
 
         // Check with no island
-        when(im.getIslandAt(Matchers.any())).thenReturn(Optional.empty());
+        when(im.getIslandAt(any())).thenReturn(Optional.empty());
         // Fire spread is not allowed, so should be cancelled
         Flags.FIRE_IGNITE.setDefaultSetting(false);
         assertTrue(listener.onBlockIgnite(e));

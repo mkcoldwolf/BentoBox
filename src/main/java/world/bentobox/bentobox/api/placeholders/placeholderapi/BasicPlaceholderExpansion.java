@@ -5,9 +5,9 @@ import java.util.Locale;
 import java.util.Map;
 
 import org.bukkit.entity.Player;
+import org.eclipse.jdt.annotation.NonNull;
 
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
-import org.eclipse.jdt.annotation.NonNull;
 import world.bentobox.bentobox.api.placeholders.PlaceholderReplacer;
 import world.bentobox.bentobox.api.user.User;
 
@@ -43,8 +43,7 @@ abstract class BasicPlaceholderExpansion extends PlaceholderExpansion {
     @Override
     public String onPlaceholderRequest(Player p, String placeholder) {
         User user = User.getInstance(p);
-
-        if (placeholders.containsKey(placeholder)) {
+        if (user != null && placeholders.containsKey(placeholder)) {
             return placeholders.get(placeholder).onReplace(user);
         }
         return null;
@@ -58,5 +57,10 @@ abstract class BasicPlaceholderExpansion extends PlaceholderExpansion {
      */
     public boolean isPlaceholder(@NonNull String placeholder) {
     	return placeholders.containsKey(placeholder);
+    }
+
+    @Override
+    public boolean persist() {
+        return true;
     }
 }

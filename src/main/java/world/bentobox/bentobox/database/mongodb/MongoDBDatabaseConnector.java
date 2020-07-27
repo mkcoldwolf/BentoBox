@@ -1,7 +1,14 @@
 package world.bentobox.bentobox.database.mongodb;
 
+import java.util.HashSet;
+import java.util.Set;
+
+import org.bukkit.Bukkit;
+import org.eclipse.jdt.annotation.NonNull;
+
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientOptions;
+import com.mongodb.MongoClientURI;
 import com.mongodb.MongoCredential;
 import com.mongodb.ServerAddress;
 import com.mongodb.client.MongoDatabase;
@@ -12,23 +19,35 @@ import world.bentobox.bentobox.database.DatabaseConnector;
 public class MongoDBDatabaseConnector implements DatabaseConnector {
 
     private MongoClient client;
-    private DatabaseConnectionSettingsImpl dbSettings;
+    private final DatabaseConnectionSettingsImpl dbSettings;
+    private final String mongoDbConnectionURI;
+    private final Set<Class<?>> types = new HashSet<>();
 
     /**
      * Class for MySQL database connections using the settings provided
      * @param dbSettings - database settings
      */
-    MongoDBDatabaseConnector(DatabaseConnectionSettingsImpl dbSettings) {
+    MongoDBDatabaseConnector(DatabaseConnectionSettingsImpl dbSettings, String mongoDbConnectionURI) {
         this.dbSettings = dbSettings;
-        MongoCredential credential = MongoCredential.createCredential(dbSettings.getUsername(),
-                dbSettings.getDatabaseName(),
-                dbSettings.getPassword().toCharArray());
-        MongoClientOptions options = MongoClientOptions.builder().sslEnabled(false).build();
-        client = new MongoClient(new ServerAddress(dbSettings.getHost(), dbSettings.getPort()), credential,options);
+        this.mongoDbConnectionURI = mongoDbConnectionURI;
     }
 
     @Override
-    public MongoDatabase createConnection() {
+    public MongoDatabase createConnection(Class<?> type) {
+        types.add(type);
+        // Only get one client
+        if (client == null) {
+            if(mongoDbConnectionURI == null || mongoDbConnectionURI.isEmpty()){
+                MongoCredential credential = MongoCredential.createCredential(dbSettings.getUsername(),
+                        dbSettings.getDatabaseName(),
+                        dbSettings.getPassword().toCharArray());
+                MongoClientOptions options = MongoClientOptions.builder().sslEnabled(dbSettings.isUseSSL()).build();
+                client = new MongoClient(new ServerAddress(dbSettings.getHost(), dbSettings.getPort()), credential,options);
+            }else {
+                client = new MongoClient(new MongoClientURI(this.mongoDbConnectionURI));
+            }
+
+        }
         return client.getDatabase(dbSettings.getDatabaseName());
     }
 
@@ -38,6 +57,7 @@ public class MongoDBDatabaseConnector implements DatabaseConnector {
     }
 
     @Override
+    @NonNull
     public String getUniqueId(String tableName) {
         // Not used
         return "";
@@ -50,8 +70,12 @@ public class MongoDBDatabaseConnector implements DatabaseConnector {
     }
 
     @Override
-    public void closeConnection() {
-        client.close();
+    public void closeConnection(Class<?> type) {
+        types.remove(type);
+        if (types.isEmpty() && client != null) {
+            client.close();
+            Bukkit.getLogger().info("Closed database connection");
+        }
     }
 
 }

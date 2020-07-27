@@ -4,14 +4,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.bukkit.Bukkit;
 import org.bukkit.World;
 
 import com.google.common.collect.ImmutableSet;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.commands.ConfirmableCommand;
-import world.bentobox.bentobox.api.events.IslandBaseEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
@@ -56,16 +54,15 @@ public class AdminSetspawnCommand extends ConfirmableCommand {
 
     private void setSpawn(User user, Island i) {
         if (!i.getMembers().isEmpty()) {
-            if (i.getOwner() != null) {
-                // Fire event
-                IslandBaseEvent event = IslandEvent.builder()
-                        .island(i)
-                        .location(i.getCenter())
-                        .reason(IslandEvent.Reason.UNREGISTERED)
-                        .involvedPlayer(i.getOwner())
-                        .admin(true)
-                        .build();
-                Bukkit.getServer().getPluginManager().callEvent(event);
+            if (i.isOwned()) {
+                // Build and fire event
+                IslandEvent.builder()
+                .island(i)
+                .location(i.getCenter())
+                .reason(IslandEvent.Reason.UNREGISTERED)
+                .involvedPlayer(i.getOwner())
+                .admin(true)
+                .build();
             }
             // If island is owned, then unregister the owner and any members
             new ImmutableSet.Builder<UUID>().addAll(i.getMembers().keySet()).build().forEach(m -> {
@@ -75,7 +72,8 @@ public class AdminSetspawnCommand extends ConfirmableCommand {
         }
         getIslands().setSpawn(i);
         i.setSpawnPoint(World.Environment.NORMAL, user.getLocation());
-        user.sendMessage("general.success");
-
+        // Set the island's range to the full island space because it is spawn
+        i.setProtectionRange(i.getRange());
+        user.sendMessage("commands.admin.setspawn.success");
     }
 }

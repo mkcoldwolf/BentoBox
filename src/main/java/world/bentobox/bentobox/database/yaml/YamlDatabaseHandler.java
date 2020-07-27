@@ -17,22 +17,24 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CompletableFuture;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.MemorySection;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.entity.EntityType;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
+
+import com.google.common.base.Enums;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.configuration.ConfigComment;
@@ -60,24 +62,9 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
     private static final String YML = ".yml";
 
     /**
-     * FIFO queue for saves. Note that the assumption here is that most database objects will be held
-     * in memory because loading is not handled with this queue. That means that it is theoretically
-     * possible to load something before it has been saved. So, in general, load your objects and then
-     * save them async only when you do not need the data again immediately.
-     */
-    private Queue<Runnable> processQueue;
-
-    /**
-     * Async save task that runs repeatedly
-     */
-    private BukkitTask asyncSaveTask;
-
-    /**
      * Flag to indicate if this is a config or a pure object database (difference is in comments and annotations)
      */
     protected boolean configFlag;
-
-
 
     /**
      * Constructor
@@ -87,26 +74,6 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
      */
     YamlDatabaseHandler(BentoBox plugin, Class<T> type, DatabaseConnector databaseConnector) {
         super(plugin, type, databaseConnector);
-        processQueue = new ConcurrentLinkedQueue<>();
-        if (plugin.isEnabled()) {
-            asyncSaveTask = Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-                // Loop continuously
-                while (plugin.isEnabled() || !processQueue.isEmpty()) {
-                    while (!processQueue.isEmpty()) {
-                        processQueue.poll().run();
-                    }
-                    // Clear the queue and then sleep
-                    try {
-                        Thread.sleep(25);
-                    } catch (InterruptedException e) {
-                        plugin.logError("Thread sleep error " + e.getMessage());
-                        Thread.currentThread().interrupt();
-                    }
-                }
-                // Cancel
-                asyncSaveTask.cancel();
-            });
-        }
     }
 
     /* (non-Javadoc)
@@ -176,9 +143,9 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
      * @param config - YAML config file
      *
      * @return <T> filled with values
-     * @throws SecurityException
-     * @throws NoSuchMethodException
-     * @throws IllegalArgumentException
+     * @throws SecurityException security exception
+     * @throws NoSuchMethodException no such method
+     * @throws IllegalArgumentException illegal argument
      */
     private T createObject(YamlConfiguration config) throws InstantiationException, IllegalAccessException, IntrospectionException, InvocationTargetException, ClassNotFoundException, NoSuchMethodException {
         // Create a new instance of the dataObject of type T (which can be any class)
@@ -191,6 +158,7 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
                 continue;
             }
             // Get the getter and setters for this field using the JavaBeans system
+            //noinspection RedundantCast
             PropertyDescriptor propertyDescriptor = new PropertyDescriptor(field.getName(), dataObject);
             // Get the write method
             Method method = propertyDescriptor.getWriteMethod();
@@ -246,9 +214,26 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
             Object setTo = deserialize(value,propertyDescriptor.getPropertyType());
             if (!(Enum.class.isAssignableFrom(propertyDescriptor.getPropertyType()) && setTo == null)) {
                 // Do not invoke null on Enums
-                method.invoke(instance, setTo);
+                try {
+                    // Floats need special handling because the database returns them as doubles
+                    Type setType = propertyDescriptor.getWriteMethod().getGenericParameterTypes()[0];
+                    if (setType.getTypeName().equals("float")) {
+                        double d = (double) setTo;
+                        float f = (float)d;
+                        method.invoke(instance, f);
+                    } else {
+                        method.invoke(instance, setTo);
+                    }
+                } catch (Exception e) {
+                    plugin.logError("Could not deserialize. Attempt by " + instance.getClass().getCanonicalName() + " " + method.getName() + " to set to " + setTo);
+                    plugin.logError("Error message is: " + e.getMessage());
+                    plugin.logStacktrace(e);
+                }
             } else {
                 plugin.logError("Default setting value will be used: " + propertyDescriptor.getReadMethod().invoke(instance));
+                plugin.logError(method.getName());
+                plugin.logError(propertyDescriptor.getReadMethod().getName());
+                plugin.logError(instance.toString());
             }
         }
     }
@@ -345,19 +330,22 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
      * Inserts T into the corresponding database-table
      *
      * @param instance that should be inserted into the database
+     * @return CompletableFuture that will be true if object is saved successfully
      */
     @SuppressWarnings("unchecked")
     @Override
-    public void saveObject(T instance) throws IllegalAccessException, InvocationTargetException, IntrospectionException {
+    public CompletableFuture<Boolean> saveObject(T instance) throws IllegalAccessException, InvocationTargetException, IntrospectionException {
+        CompletableFuture<Boolean> completableFuture = new CompletableFuture<>();
         // Null check
         if (instance == null) {
             plugin.logError("YAML database request to store a null.");
-            return;
+            completableFuture.complete(false);
+            return completableFuture;
         }
-        // DataObject check
         if (!(instance instanceof DataObject)) {
             plugin.logError("This class is not a DataObject: " + instance.getClass().getName());
-            return;
+            completableFuture.complete(false);
+            return completableFuture;
         }
         // This is the Yaml Configuration that will be used and saved at the end
         YamlConfiguration config = new YamlConfiguration();
@@ -379,6 +367,7 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
                 continue;
             }
             // Get the property descriptor for this field
+            //noinspection RedundantCast
             PropertyDescriptor propertyDescriptor = new PropertyDescriptor(field.getName(), dataObject);
             // Get the read method
             Method method = propertyDescriptor.getReadMethod();
@@ -433,16 +422,19 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
         }
 
         // Save
-        save(filename, config.saveToString(), path, yamlComments);
+        save(completableFuture, filename, config.saveToString(), path, yamlComments);
+        return completableFuture;
     }
 
-    private void save(String name, String data, String path, Map<String, String> yamlComments) {
+    private void save(CompletableFuture<Boolean> completableFuture, String name, String data, String path, Map<String, String> yamlComments) {
         if (plugin.isEnabled()) {
             // Async
-            processQueue.add(() -> ((YamlDatabaseConnector)databaseConnector).saveYamlFile(data, path, name, yamlComments));
+            processQueue.add(() -> completableFuture.complete(
+                    ((YamlDatabaseConnector)databaseConnector).saveYamlFile(data, path, name, yamlComments)));
         } else {
             // Sync for shutdown
-            ((YamlDatabaseConnector)databaseConnector).saveYamlFile(data, path, name, yamlComments);
+            completableFuture.complete(
+                    ((YamlDatabaseConnector)databaseConnector).saveYamlFile(data, path, name, yamlComments));
         }
     }
 
@@ -518,6 +510,11 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
      * @since 1.3.0
      */
     private void handleConfigEntryComments(@NonNull ConfigEntry configEntry, @NonNull YamlConfiguration config, @NonNull Map<String, String> yamlComments, @NonNull String parent) {
+        // Tell if there is a video associated to this configuration option.
+        if (!configEntry.video().isEmpty()) {
+            setComment("You can find more details in this video: " + configEntry.video(), config, yamlComments, parent);
+        }
+
         // Tell when the configEntry has been added (if it's not "1.0")
         if (!configEntry.since().equals("1.0")) {
             setComment("Added since " + configEntry.since() + ".", config, yamlComments, parent);
@@ -531,6 +528,10 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
         // Tell if the configEntry needs a reset.
         if (configEntry.needsReset()) {
             setComment("/!\\ BentoBox currently does not support changing this value mid-game. If you do need to change it, do a full reset of your databases and worlds.", config, yamlComments, parent);
+        }
+        // Tell if the configEntry needs the server to be restarted.
+        if (configEntry.needsRestart()) {
+            setComment("/!\\ In order to apply the changes made to this option, you must restart your server. Reloading BentoBox or the server won't work.", config, yamlComments, parent);
         }
     }
 
@@ -624,7 +625,13 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
             // Find out the value
             Class<Enum> enumClass = (Class<Enum>)clazz;
             try {
-                value = Enum.valueOf(enumClass, ((String)value).toUpperCase());
+                String name = ((String)value).toUpperCase(Locale.ENGLISH);
+                // Backwards compatibility for upgrade to 1.16.1
+                if (name.equals("PIG_ZOMBIE") || name.equals("ZOMBIFIED_PIGLIN")) {
+                    return Enums.getIfPresent(EntityType.class, "ZOMBIFIED_PIGLIN")
+                            .or(Enums.getIfPresent(EntityType.class, "PIG_ZOMBIE").or(EntityType.PIG));
+                }
+                value = Enum.valueOf(enumClass, name);
             } catch (Exception e) {
                 // This value does not exist - probably admin typed it wrongly
                 // Show what is available and pick one at random
@@ -649,6 +656,9 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
     }
 
     private void delete(String uniqueId) {
+        if (uniqueId == null) {
+            return;
+        }
         // The filename of the YAML file is the value of uniqueId field plus .yml. Sometimes the .yml is already appended.
         if (!uniqueId.endsWith(YML)) {
             uniqueId = uniqueId + YML;
@@ -660,7 +670,7 @@ public class YamlDatabaseHandler<T> extends AbstractDatabaseHandler<T> {
             // Obtain the file and delete it
             File file = new File(tableFolder, uniqueId);
             try {
-                Files.delete(file.toPath());
+                Files.deleteIfExists(file.toPath());
             } catch (IOException e) {
                 plugin.logError("Could not delete yml database object! " + file.getName() + " - " + e.getMessage());
             }

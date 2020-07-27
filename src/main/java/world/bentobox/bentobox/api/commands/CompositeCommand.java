@@ -24,7 +24,6 @@ import org.eclipse.jdt.annotation.Nullable;
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.Settings;
 import world.bentobox.bentobox.api.addons.Addon;
-import world.bentobox.bentobox.api.addons.GameModeAddon;
 import world.bentobox.bentobox.api.events.command.CommandEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
@@ -53,6 +52,12 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
      * True if command is a configurable rank
      */
     private boolean configurableRankCommand = false;
+
+    /**
+     * True if command is hidden from help and tab complete
+     * @since 1.13.0
+     */
+    private boolean hidden = false;
 
     /**
      * The parameters string for this command. It is the commands followed by a locale reference.
@@ -87,6 +92,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
     /**
      * The prefix to be used in this command
      */
+    @Nullable
     private String permissionPrefix;
 
     /**
@@ -108,7 +114,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
     /**
      * Cool down tracker
      */
-    private Map<UUID, Map<UUID, Long>> cooldowns = new HashMap<>();
+    private Map<String, Map<String, Long>> cooldowns = new HashMap<>();
 
     /**
      * Top level command
@@ -135,10 +141,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
         setDescription(COMMANDS + label + ".description");
         setParametersHelp(COMMANDS + label + ".parameters");
         permissionPrefix = (addon != null) ? addon.getPermissionPrefix() : "";
-        // Set up world if this is an AddonGameMode
-        if (addon instanceof GameModeAddon) {
-            setWorld(((GameModeAddon)addon).getOverWorld());
-        }
+
         // Run setup
         setup();
         if (!getSubCommand("help").isPresent() && !label.equals("help")) {
@@ -190,8 +193,6 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
         setUsage("");
         // Inherit permission prefix
         this.permissionPrefix = parent.getPermissionPrefix();
-        // Inherit world
-        this.world = parent.getWorld();
 
         // Default references to description and parameters
         StringBuilder reference = new StringBuilder();
@@ -220,17 +221,6 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
     public boolean execute(CommandSender sender, String label, String[] args) {
         // Get the User instance for this sender
         User user = User.getInstance(sender);
-        CompositeCommand cmd = getCommandFromArgs(args);
-        // Check for console and permissions
-        if (cmd.onlyPlayer && !(sender instanceof Player)) {
-            user.sendMessage("general.errors.use-in-game");
-            return false;
-        }
-        // Check perms, but only if this isn't the console
-        if ((sender instanceof Player) && !sender.isOp() && !cmd.getPermission().isEmpty() && !sender.hasPermission(cmd.getPermission())) {
-            user.sendMessage("general.errors.no-permission", TextVariables.PERMISSION, cmd.getPermission());
-            return false;
-        }
         // Fire an event to see if this command should be cancelled
         CommandEvent event = CommandEvent.builder()
                 .setCommand(this)
@@ -241,14 +231,39 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
         if (event.isCancelled()) {
             return false;
         }
+        // Get command
+        CompositeCommand cmd = getCommandFromArgs(args);
+        String cmdLabel = (cmd.subCommandLevel > 0) ? args[cmd.subCommandLevel-1] : label;
+        List<String> cmdArgs = Arrays.asList(args).subList(cmd.subCommandLevel, args.length);
+        // Call
+        return cmd.call(user, cmdLabel, cmdArgs);
+    }
+
+    /**
+     * Calls this composite command.
+     * Does not traverse the tree of subcommands in args.
+     * Event is not fired and it cannot be cancelled.
+     * @param user - user calling this command
+     * @param cmdLabel - label used
+     * @param cmdArgs - list of args
+     * @return {@code true} if successful, {@code false} if not.
+     * @since 1.5.3
+     */
+    public boolean call(User user, String cmdLabel, List<String> cmdArgs) {
+        // Check for console and permissions
+        if (onlyPlayer && !user.isPlayer()) {
+            user.sendMessage("general.errors.use-in-game");
+            return false;
+        }
+        // Check perms, but only if this isn't the console
+        if (user.isPlayer() && !user.isOp() && getPermission() != null && !getPermission().isEmpty() && !user.hasPermission(getPermission())) {
+            user.sendMessage("general.errors.no-permission", TextVariables.PERMISSION, getPermission());
+            return false;
+        }
         // Set the user's addon context
         user.setAddon(addon);
         // Execute and trim args
-
-        String cmdLabel = (cmd.subCommandLevel > 0) ? args[cmd.subCommandLevel-1] : label;
-        List<String> cmdArgs = Arrays.asList(args).subList(cmd.subCommandLevel, args.length);
-
-        return cmd.canExecute(user, cmdLabel, cmdArgs) && cmd.execute(user, cmdLabel, cmdArgs);
+        return canExecute(user, cmdLabel, cmdArgs) && execute(user, cmdLabel, cmdArgs);
     }
 
     /**
@@ -546,7 +561,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
      */
     @Override
     public void setPermission(String permission) {
-        this.permission = permissionPrefix + permission;
+        this.permission = ((permissionPrefix != null && !permissionPrefix.isEmpty()) ? permissionPrefix : "") + permission;
     }
 
     /**
@@ -583,7 +598,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
         if (command.isOnlyPlayer() && !(sender instanceof Player)) {
             return options;
         }
-        if (!command.getPermission().isEmpty() && !sender.hasPermission(command.getPermission()) && !sender.isOp()) {
+        if (command.getPermission() != null && !command.getPermission().isEmpty() && !sender.hasPermission(command.getPermission()) && !sender.isOp()) {
             return options;
         }
         // Add any tab completion from the subcommand
@@ -607,7 +622,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
     }
 
     /**
-     * Returns a list containing all the labels of the subcommands for the provided CompositeCommand.
+     * Returns a list containing all the labels of the subcommands for the provided CompositeCommand excluding any hidden commands
      * @param sender the CommandSender
      * @param command the CompositeCommand to get the subcommands from
      * @return a list of subcommands labels or an empty list.
@@ -615,7 +630,8 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
     @NonNull
     private List<String> getSubCommandLabels(@NonNull CommandSender sender, @NonNull CompositeCommand command) {
         return command.getSubCommands().values().stream()
-                .filter(cmd -> !cmd.isOnlyPlayer() || sender.isOp() || (sender instanceof Player && (cmd.getPermission().isEmpty() || sender.hasPermission(cmd.getPermission()))) )
+                .filter(cmd -> !cmd.isHidden())
+                .filter(cmd -> !cmd.isOnlyPlayer() || sender.isOp() || (sender instanceof Player && cmd.getPermission() != null && (cmd.getPermission().isEmpty() || sender.hasPermission(cmd.getPermission()))) )
                 .map(CompositeCommand::getLabel).collect(Collectors.toList());
     }
 
@@ -640,6 +656,7 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
      * If the permission prefix has been set, will return the prefix plus a trailing dot.
      * @return the permissionPrefix
      */
+    @Nullable
     public String getPermissionPrefix() {
         return permissionPrefix;
     }
@@ -649,7 +666,8 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
      * @return the world
      */
     public World getWorld() {
-        return world;
+        // Search up the tree until the world at the top is found
+        return parent != null ? parent.getWorld() : world;
     }
 
     /**
@@ -662,8 +680,9 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
     /**
      * @return the addon
      */
-    public Addon getAddon() {
-        return addon;
+    @SuppressWarnings("unchecked")
+    public <T extends Addon> T getAddon() {
+        return (T) addon;
     }
 
     /**
@@ -675,32 +694,74 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
 
     /**
      * Set a cool down - can be set by other commands on this one
-     * @param uniqueId - the caller
+     * @param uniqueId - the unique ID that is having the cooldown
      * @param targetUUID - the target (if any)
      * @param timeInSeconds - time in seconds to cool down
+     * @since 1.5.0
      */
-    public void setCooldown(UUID uniqueId, UUID targetUUID, int timeInSeconds) {
-        cooldowns.putIfAbsent(uniqueId, new HashMap<>());
-        cooldowns.get(uniqueId).put(targetUUID, System.currentTimeMillis() + timeInSeconds * 1000);
+    public void setCooldown(String uniqueId, String targetUUID, int timeInSeconds) {
+        cooldowns.computeIfAbsent(uniqueId, k -> new HashMap<>()).put(targetUUID, System.currentTimeMillis() + timeInSeconds * 1000);
     }
 
     /**
-     * Check if cool down is in progress
+     * Set a cool down - can be set by other commands on this one
+     * @param uniqueId - the UUID that is having the cooldown
+     * @param targetUUID - the target UUID (if any)
+     * @param timeInSeconds - time in seconds to cool down
+     */
+    public void setCooldown(UUID uniqueId, UUID targetUUID, int timeInSeconds) {
+        cooldowns.computeIfAbsent(uniqueId.toString(), k -> new HashMap<>()).put(targetUUID == null ? null : targetUUID.toString(), System.currentTimeMillis() + timeInSeconds * 1000);
+    }
+
+    /**
+     * Set a cool down for a user - can be set by other commands on this one
+     * @param uniqueId - the UUID that is having the cooldown
+     * @param timeInSeconds - time in seconds to cool down
+     * @since 1.5.0
+     */
+    public void setCooldown(UUID uniqueId, int timeInSeconds) {
+        setCooldown(uniqueId, null, timeInSeconds);
+    }
+
+    /**
+     * Check if cool down is in progress for user
      * @param user - the caller of the command
      * @param targetUUID - the target (if any)
      * @return true if cool down in place, false if not
      */
     protected boolean checkCooldown(User user, UUID targetUUID) {
-        if (!cooldowns.containsKey(user.getUniqueId()) || user.isOp() || user.hasPermission(getPermissionPrefix() + ".mod.bypasscooldowns")) {
+        return checkCooldown(user, user.getUniqueId().toString(), targetUUID == null ? null : targetUUID.toString());
+    }
+
+    /**
+     * Check if cool down is in progress for user
+     * @param user - the user to check
+     * @return true if cool down in place, false if not
+     * @since 1.5.0
+     */
+    protected boolean checkCooldown(User user) {
+        return checkCooldown(user, user.getUniqueId().toString(), null);
+    }
+
+    /**
+     * Check if cool down is in progress
+     * @param user - the caller of the command
+     * @param uniqueId - the id that needs to be checked
+     * @param targetUUID - the target (if any)
+     * @return true if cool down in place, false if not
+     * @since 1.5.0
+     */
+    protected boolean checkCooldown(User user, String uniqueId, String targetUUID) {
+        if (!cooldowns.containsKey(uniqueId) || user.isOp() || user.hasPermission(getPermissionPrefix() + "mod.bypasscooldowns")) {
             return false;
         }
-        cooldowns.putIfAbsent(user.getUniqueId(), new HashMap<>());
-        if (cooldowns.get(user.getUniqueId()).getOrDefault(targetUUID, 0L) - System.currentTimeMillis() <= 0) {
+        cooldowns.putIfAbsent(uniqueId, new HashMap<>());
+        if (cooldowns.get(uniqueId).getOrDefault(targetUUID, 0L) - System.currentTimeMillis() <= 0) {
             // Cool down is done
-            cooldowns.get(user.getUniqueId()).remove(targetUUID);
+            cooldowns.get(uniqueId).remove(targetUUID);
             return false;
         }
-        int timeToGo = (int) ((cooldowns.get(user.getUniqueId()).getOrDefault(targetUUID, 0L) - System.currentTimeMillis()) / 1000);
+        int timeToGo = (int) ((cooldowns.get(uniqueId).getOrDefault(targetUUID, 0L) - System.currentTimeMillis()) / 1000);
         user.sendMessage("general.errors.you-must-wait", TextVariables.NUMBER, String.valueOf(timeToGo));
         return true;
     }
@@ -717,6 +778,24 @@ public abstract class CompositeCommand extends Command implements PluginIdentifi
      */
     public void setConfigurableRankCommand() {
         this.configurableRankCommand = true;
+    }
+
+    /**
+     * Checks if a command is hidden
+     * @return the hidden
+     * @since 1.13.0
+     */
+    public boolean isHidden() {
+        return hidden;
+    }
+
+    /**
+     * Sets a command and all its help and tab complete as hidden
+     * @param hidden whether command is hidden or not
+     * @since 1.13.0
+     */
+    public void setHidden(boolean hidden) {
+        this.hidden = hidden;
     }
 
 }

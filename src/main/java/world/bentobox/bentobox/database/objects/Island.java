@@ -14,9 +14,11 @@ import java.util.stream.Collectors;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
 import org.bukkit.entity.Player;
+import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
@@ -26,15 +28,19 @@ import com.google.common.collect.ImmutableSet.Builder;
 import com.google.gson.annotations.Expose;
 
 import world.bentobox.bentobox.BentoBox;
+import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.configuration.WorldSettings;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.logs.LogEntry;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.adapters.Adapter;
 import world.bentobox.bentobox.database.objects.adapters.FlagSerializer;
+import world.bentobox.bentobox.database.objects.adapters.FlagSerializer3;
 import world.bentobox.bentobox.database.objects.adapters.LogEntryListAdapter;
 import world.bentobox.bentobox.lists.Flags;
+import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.RanksManager;
 import world.bentobox.bentobox.util.Pair;
 import world.bentobox.bentobox.util.Util;
@@ -47,6 +53,7 @@ import world.bentobox.bentobox.util.Util;
  * @author tastybento
  * @author Poslovitch
  */
+@Table(name = "Islands")
 public class Island implements DataObject {
 
     // True if this island is deleted and pending deletion from the database
@@ -54,11 +61,13 @@ public class Island implements DataObject {
     private boolean deleted = false;
 
     @Expose
+    @NonNull
     private String uniqueId = UUID.randomUUID().toString();
 
     //// Island ////
     // The center of the island itself
     @Expose
+    @Nullable
     private Location center;
 
     // Island range
@@ -77,8 +86,16 @@ public class Island implements DataObject {
     @Expose
     private World world;
 
+    /**
+     * Name of the {@link world.bentobox.bentobox.api.addons.GameModeAddon GameModeAddon} this island is handled by.
+     * @since 1.5.0
+     */
+    @Expose
+    private String gameMode;
+
     // Display name
     @Expose
+    @Nullable
     private String name;
 
     // Time parameters
@@ -88,9 +105,21 @@ public class Island implements DataObject {
     private long updatedDate;
 
     //// Team ////
+    /**
+     * Owner of the island.
+     * There can only be one per island.
+     * If it is {@code null}, then the island is considered as unowned.
+     */
     @Expose
-    private @Nullable UUID owner;
+    @Nullable
+    private UUID owner;
 
+    /**
+     * Members of the island.
+     * It contains any player which has one of the following rank on this island: {@link RanksManager#COOP_RANK COOP},
+     * {@link RanksManager#TRUSTED_RANK TRUSTED}, {@link RanksManager#MEMBER_RANK MEMBER}, {@link RanksManager#SUB_OWNER_RANK SUB_OWNER},
+     * {@link RanksManager#OWNER_RANK OWNER}.
+     */
     @Expose
     private Map<UUID, Integer> members = new HashMap<>();
 
@@ -121,6 +150,31 @@ public class Island implements DataObject {
     @Expose
     private boolean doNotLoad;
 
+    /**
+     * Used to store flag cooldowns for this island
+     */
+    @Adapter(FlagSerializer3.class)
+    @Expose
+    private Map<Flag, Long> cooldowns = new HashMap<>();
+
+    /**
+     * Commands and the rank required to use them for this island
+     */
+    @Expose
+    private Map<String, Integer> commandRanks;
+
+    /**
+     * If true then this space is reserved for the owner and when they teleport there they will be asked to make an island
+     * @since 1.6.0
+     */
+    @Expose
+    @Nullable
+    private Boolean reserved = null;
+
+    /*
+     * *************************** Constructors ******************************
+     */
+
     public Island() {}
 
     public Island(@NonNull Location location, UUID owner, int protectionRange) {
@@ -134,6 +188,40 @@ public class Island implements DataObject {
         this.protectionRange = protectionRange;
         this.maxEverProtectionRange = protectionRange;
     }
+
+    /**
+     * Clones an island object
+     * @param island - island to clone
+     */
+    public Island(Island island) {
+        this.center = island.getCenter().clone();
+        this.createdDate = island.getCreatedDate();
+        this.deleted = island.isDeleted();
+        this.doNotLoad = island.isDoNotLoad();
+        this.flags.putAll(island.getFlags());
+        this.gameMode = island.getGameMode();
+        this.history.addAll(island.getHistory());
+        this.levelHandicap = island.getLevelHandicap();
+        this.maxEverProtectionRange = island.getMaxEverProtectionRange();
+        this.members.putAll(island.getMembers());
+        this.name = island.getName();
+        this.owner = island.getOwner();
+        this.protectionRange = island.getProtectionRange();
+        this.purgeProtected = island.getPurgeProtected();
+        this.range = island.getRange();
+        this.spawn = island.isSpawn();
+        island.getSpawnPoint().forEach((k,v) -> island.spawnPoint.put(k, v.clone()));
+        this.uniqueId = island.getUniqueId();
+        this.updatedDate = island.getUpdatedDate();
+        this.world = island.getWorld();
+        this.cooldowns = island.getCooldowns();
+        this.commandRanks = island.getCommandRanks();
+        this.reserved = island.isReserved();
+    }
+
+    /*
+     * *************************** Methods ******************************
+     */
 
     /**
      * Adds a team member. If player is on banned list, they will be removed from it.
@@ -193,6 +281,7 @@ public class Island implements DataObject {
      * Returns a clone of the location of the center of this island.
      * @return clone of the center Location
      */
+    @Nullable
     public Location getCenter(){
         return center == null ? null : center.clone();
     }
@@ -212,8 +301,7 @@ public class Island implements DataObject {
      * @return flag value
      */
     public int getFlag(@NonNull Flag flag) {
-        flags.putIfAbsent(flag, flag.getDefaultRank());
-        return flags.get(flag);
+        return flags.computeIfAbsent(flag, k -> flag.getDefaultRank());
     }
 
     /**
@@ -231,25 +319,57 @@ public class Island implements DataObject {
     }
 
     /**
-     * Get the team members of the island. If this is empty or cleared, there is no team.
-     * @return the members - key is the UUID, value is the RanksManager enum, e.g. RanksManager.MEMBER_RANK
+     * Returns the members of this island.
+     * It contains all players that have any rank on this island, including {@link RanksManager#BANNED_RANK BANNED},
+     * {@link RanksManager#TRUSTED_RANK TRUSTED}, {@link RanksManager#MEMBER_RANK MEMBER}, {@link RanksManager#SUB_OWNER_RANK SUB_OWNER},
+     * {@link RanksManager#OWNER_RANK OWNER}, etc.
+     *
+     * @return the members - key is the UUID, value is the RanksManager enum, e.g. {@link RanksManager#MEMBER_RANK}.
+     * @see #getMemberSet()
      */
     public Map<UUID, Integer> getMembers() {
         return members;
     }
 
     /**
-     * Members >= MEMBER_RANK
+     * Returns an immutable set containing the UUIDs of players that are truly members of this island.
+     * This includes any player which has one of the following rank on this island: {@link RanksManager#MEMBER_RANK MEMBER},
+     * {@link RanksManager#SUB_OWNER_RANK SUB_OWNER}, {@link RanksManager#OWNER_RANK OWNER}.
      * @return the members of the island (owner included)
+     * @see #getMembers()
      */
     public ImmutableSet<UUID> getMemberSet(){
-        Builder<UUID> result = new ImmutableSet.Builder<>();
+        return getMemberSet(RanksManager.MEMBER_RANK);
+    }
 
-        for (Entry<UUID, Integer> member: members.entrySet()) {
-            if (member.getValue() >= RanksManager.MEMBER_RANK) {
-                result.add(member.getKey());
-            }
+    /**
+     * Returns an immutable set containing the UUIDs of players with rank above that requested rank inclusive
+     * @param minimumRank minimum rank (inclusive) of members
+     * @return immutable set of UUIDs
+     * @see #getMembers()
+     * @since 1.5.0
+     */
+    public @NonNull ImmutableSet<UUID> getMemberSet(int minimumRank) {
+        Builder<UUID> result = new ImmutableSet.Builder<>();
+        members.entrySet().stream().filter(e -> e.getValue() >= minimumRank).map(Map.Entry::getKey).forEach(result::add);
+        return result.build();
+    }
+
+    /**
+     * Returns an immutable set containing the UUIDs of players with rank equal or above that requested rank (inclusive).
+     * @param rank rank to request
+     * @param includeAboveRanks whether including players with rank above the requested rank or not
+     * @return immutable set of UUIDs
+     * @see #getMemberSet(int)
+     * @see #getMembers()
+     * @since 1.5.0
+     */
+    public @NonNull ImmutableSet<UUID> getMemberSet(int rank, boolean includeAboveRanks) {
+        if (includeAboveRanks) {
+            return getMemberSet(rank);
         }
+        Builder<UUID> result = new ImmutableSet.Builder<>();
+        members.entrySet().stream().filter(e -> e.getValue() == rank).map(Map.Entry::getKey).forEach(result::add);
         return result.build();
     }
 
@@ -261,10 +381,26 @@ public class Island implements DataObject {
     }
 
     /**
+     * @return the maxProtectedX
+     * @since 1.5.2
+     */
+    public int getMaxProtectedX() {
+        return center.getBlockX() + protectionRange;
+    }
+
+    /**
      * @return the minProtectedZ
      */
     public int getMinProtectedZ() {
         return center.getBlockZ() - protectionRange;
+    }
+
+    /**
+     * @return the maxProtectedZ
+     * @since 1.5.2
+     */
+    public int getMaxProtectedZ() {
+        return center.getBlockZ() + protectionRange;
     }
 
     /**
@@ -275,6 +411,14 @@ public class Island implements DataObject {
     }
 
     /**
+     * @return the maxX
+     * @since 1.5.2
+     */
+    public int getMaxX() {
+        return center.getBlockX() + range;
+    }
+
+    /**
      * @return the minZ
      */
     public int getMinZ() {
@@ -282,21 +426,59 @@ public class Island implements DataObject {
     }
 
     /**
+     * @return the maxZ
+     * @since 1.5.2
+     */
+    public int getMaxZ() {
+        return center.getBlockZ() + range;
+    }
+
+    /**
      * @return the island display name. Might be {@code null} if none is set.
      */
+    @Nullable
     public String getName() {
         return name;
     }
 
     /**
-     * @return the owner
+     * Returns the owner of this island.
+     * @return the owner, may be null.
+     * @see #isOwned()
+     * @see #isUnowned()
      */
+    @Nullable
     public UUID getOwner(){
         return owner;
     }
 
     /**
-     * @return the protectionRange
+     * Returns whether this island is owned or not.
+     * @return {@code true} if this island has an owner, {@code false} otherwise.
+     * @since 1.9.1
+     * @see #getOwner()
+     * @see #isUnowned()
+     */
+    public boolean isOwned() {
+        return owner != null;
+    }
+
+    /**
+     * Returns whether this island does not have an owner.
+     * @return {@code true} if this island does not have an owner, {@code false} otherwise.
+     * @since 1.9.1
+     * @see #getOwner()
+     * @see #isOwned()
+     */
+    public boolean isUnowned() {
+        return owner == null;
+    }
+
+    /**
+     * Returns the protection range of this Island.
+     * This represents half of the length of the side of a theoretical square around the island center inside which flags are enforced.
+     * @return the protection range of this island, strictly positive integer.
+     * @see #getRange()
      */
     public int getProtectionRange() {
         return protectionRange;
@@ -340,6 +522,16 @@ public class Island implements DataObject {
      */
     public int getRank(User user) {
         return members.getOrDefault(user.getUniqueId(), RanksManager.VISITOR_RANK);
+    }
+
+    /**
+     * Get the rank of user for this island
+     * @param userUUID - the User's UUID
+     * @return rank integer
+     * @since 1.14.0
+     */
+    public int getRank(UUID userUUID) {
+        return members.getOrDefault(userUUID, RanksManager.VISITOR_RANK);
     }
 
     @Override
@@ -411,6 +603,15 @@ public class Island implements DataObject {
     }
 
     /**
+     * Returns a {@link BoundingBox} of the full island space.
+     * @return a {@link BoundingBox} of the full island space.
+     * @since 1.5.2
+     */
+    public BoundingBox getBoundingBox() {
+        return new BoundingBox(getMinX(), 0.0D, getMinZ(), getMaxX()-1.0D, world.getMaxHeight(), getMaxZ()-1.0D);
+    }
+
+    /**
      * Returns a list of players that are physically inside the island's protection range and that are visitors.
      * @return list of visitors
      * @since 1.3.0
@@ -431,7 +632,31 @@ public class Island implements DataObject {
      * @see #getVisitors()
      */
     public boolean hasVisitors() {
-        return !getVisitors().isEmpty();
+        return Bukkit.getOnlinePlayers().stream().anyMatch(player -> onIsland(player.getLocation()) && getRank(User.getInstance(player)) == RanksManager.VISITOR_RANK);
+    }
+
+    /**
+     * Returns a list of players that are physically inside the island's protection range
+     * @return list of players
+     * @since 1.6.0
+     */
+    @NonNull
+    public List<Player> getPlayersOnIsland() {
+        return Bukkit.getOnlinePlayers().stream()
+                .filter(player -> onIsland(player.getLocation()))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Returns whether this Island has players inside its protection range.
+     * Note this is equivalent to {@code !island.getPlayersOnIsland().isEmpty()}.
+     * @return {@code true} if there are players inside this Island's protection range, {@code false} otherwise.
+     *
+     * @since 1.6.0
+     * @see #getPlayersOnIsland()
+     */
+    public boolean hasPlayersOnIsland() {
+        return Bukkit.getOnlinePlayers().stream().anyMatch(player -> onIsland(player.getLocation()));
     }
 
     /**
@@ -473,13 +698,22 @@ public class Island implements DataObject {
     }
 
     /**
-     * Checks if a location is within this island's protected area
+     * Checks if a location is within this island's protected area.
      *
-     * @param target - target location
-     * @return true if it is, false if not
+     * @param target location to check, not null
+     * @return {@code true} if this location is within this island's protected area, {@code false} otherwise.
      */
-    public boolean onIsland(Location target) {
+    public boolean onIsland(@NonNull Location target) {
         return Util.sameWorld(world, target.getWorld()) && target.getBlockX() >= getMinProtectedX() && target.getBlockX() < (getMinProtectedX() + protectionRange * 2) && target.getBlockZ() >= getMinProtectedZ() && target.getBlockZ() < (getMinProtectedZ() + protectionRange * 2);
+    }
+
+    /**
+     * Returns a {@link BoundingBox} of this island's protected area.
+     * @return a {@link BoundingBox} of this island's protected area.
+     * @since 1.5.2
+     */
+    public BoundingBox getProtectionBoundingBox() {
+        return new BoundingBox(getMinProtectedX(), 0.0D, getMinProtectedZ(), getMaxProtectedX()-1.0D, world.getMaxHeight(), getMaxProtectedZ()-1.0D);
     }
 
     /**
@@ -627,7 +861,8 @@ public class Island implements DataObject {
     }
 
     /**
-     * Sets player's rank to an arbitrary rank value
+     * Sets player's rank to an arbitrary rank value.
+     * Calling this method won't call the {@link IslandEvent.IslandRankChangeEvent}.
      * @param uuid UUID of the player
      * @param rank rank value
      * @since 1.1
@@ -636,7 +871,6 @@ public class Island implements DataObject {
         if (uuid == null) {
             return; // Defensive code
         }
-
         members.put(uuid, rank);
     }
 
@@ -748,6 +982,9 @@ public class Island implements DataObject {
         if (!banned.isEmpty()) {
             user.sendMessage("commands.admin.info.banned-players");
             banned.forEach(u -> user.sendMessage("commands.admin.info.banned-format", TextVariables.NAME, plugin.getPlayers().getName(u)));
+        }
+        if (purgeProtected) {
+            user.sendMessage("commands.admin.info.purge-protected");
         }
         return true;
     }
@@ -869,4 +1106,149 @@ public class Island implements DataObject {
     public void setDeleted(boolean deleted) {
         this.deleted = deleted;
     }
+
+    /**
+     * Returns the name of the {@link world.bentobox.bentobox.api.addons.GameModeAddon GameModeAddon} this island is handled by.
+     * @return the name of the {@link world.bentobox.bentobox.api.addons.GameModeAddon GameModeAddon} this island is handled by.
+     * @since 1.5.0
+     */
+    public String getGameMode() {
+        return gameMode;
+    }
+
+    /**
+     * Sets the name of the {@link world.bentobox.bentobox.api.addons.GameModeAddon GameModeAddon} this island is handled by.
+     * Note this has no effect over the actual location of the island, however this may cause issues with addons using this data.
+     * @since 1.5.0
+     */
+    public void setGameMode(String gameMode) {
+        this.gameMode = gameMode;
+    }
+
+    /**
+     * Checks whether this island has its nether island generated or not.
+     * @return {@code true} if this island has its nether island generated, {@code false} otherwise.
+     * @since 1.5.0
+     */
+    public boolean hasNetherIsland(){
+        IslandWorldManager iwm = BentoBox.getInstance().getIWM();
+        return iwm.isNetherGenerate(getWorld()) && iwm.isNetherIslands(getWorld()) &&
+                iwm.getNetherWorld(getWorld()) != null &&
+                !getCenter().toVector().toLocation(iwm.getNetherWorld(getWorld())).getBlock().getType().equals(Material.AIR);
+    }
+
+    /**
+     * Checks whether this island has its end island generated or not.
+     * @return {@code true} if this island has its end island generated, {@code false} otherwise.
+     * @since 1.5.0
+     */
+    public boolean hasEndIsland(){
+        IslandWorldManager iwm = BentoBox.getInstance().getIWM();
+        return iwm.isEndGenerate(getWorld()) && iwm.isEndIslands(getWorld()) &&
+                iwm.getEndWorld(getWorld()) != null &&
+                !getCenter().toVector().toLocation(iwm.getEndWorld(getWorld())).getBlock().getType().equals(Material.AIR);
+    }
+
+
+    /**
+     * Checks if a flag is on cooldown. Only stored in memory so a server restart will reset the cooldown.
+     * @param flag - flag
+     * @return true if on cooldown, false if not
+     * @since 1.6.0
+     */
+    public boolean isCooldown(Flag flag) {
+        if (cooldowns.containsKey(flag) && cooldowns.get(flag) > System.currentTimeMillis()) {
+            return true;
+        }
+        cooldowns.remove(flag);
+        return false;
+    }
+
+    /**
+     * Sets a cooldown for this flag on this island.
+     * @param flag - Flag to cooldown
+     */
+    public void setCooldown(Flag flag) {
+        cooldowns.put(flag, flag.getCooldown() * 1000 + System.currentTimeMillis());
+    }
+
+    /**
+     * @return the cooldowns
+     */
+    public Map<Flag, Long> getCooldowns() {
+        return cooldowns;
+    }
+
+    /**
+     * @param cooldowns the cooldowns to set
+     */
+    public void setCooldowns(Map<Flag, Long> cooldowns) {
+        this.cooldowns = cooldowns;
+    }
+
+    /**
+     * @return the commandRanks
+     */
+    public Map<String, Integer> getCommandRanks() {
+        return commandRanks;
+    }
+
+    /**
+     * @param commandRanks the commandRanks to set
+     */
+    public void setCommandRanks(Map<String, Integer> commandRanks) {
+        this.commandRanks = commandRanks;
+    }
+
+    /**
+     * Get the rank required to run command on this island.
+     * The command must have been registered with a rank.
+     * @param command - the string given by {@link CompositeCommand#getUsage()}
+     * @return Rank value required, or if command is not set {@link RanksManager#OWNER_RANK}
+     */
+    public int getRankCommand(String command) {
+        return commandRanks == null ? RanksManager.OWNER_RANK : commandRanks.getOrDefault(command, RanksManager.OWNER_RANK);
+    }
+
+    /**
+     *
+     * @param command - the string given by {@link CompositeCommand#getUsage()}
+     * @param rank value as used by {@link RanksManager}
+     */
+    public void setRankCommand(String command, int rank) {
+        if (this.commandRanks == null) this.commandRanks = new HashMap<>();
+        this.commandRanks.put(command, rank);
+    }
+
+    /**
+     * Returns whether this Island is currently reserved or not.
+     * If {@code true}, this means no blocks, except a bedrock one at the center of the island, exist.
+     * @return {@code true} if this Island is reserved, {@code false} otherwise.
+     * @since 1.6.0
+     */
+    public boolean isReserved() {
+        return reserved != null && reserved;
+    }
+
+    /**
+     * @param reserved the reserved to set
+     * @since 1.6.0
+     */
+    public void setReserved(boolean reserved) {
+        this.reserved = reserved;
+    }
+
+    /* (non-Javadoc)
+     * @see java.lang.Object#toString()
+     */
+    @Override
+    public String toString() {
+        return "Island [deleted=" + deleted + ", uniqueId=" + uniqueId + ", center=" + center + ", range=" + range
+                + ", protectionRange=" + protectionRange + ", maxEverProtectionRange=" + maxEverProtectionRange
+                + ", world=" + world + ", gameMode=" + gameMode + ", name=" + name + ", createdDate=" + createdDate
+                + ", updatedDate=" + updatedDate + ", owner=" + owner + ", members=" + members + ", spawn=" + spawn
+                + ", purgeProtected=" + purgeProtected + ", flags=" + flags + ", history=" + history
+                + ", levelHandicap=" + levelHandicap + ", spawnPoint=" + spawnPoint + ", doNotLoad=" + doNotLoad + "]";
+    }
+
 }

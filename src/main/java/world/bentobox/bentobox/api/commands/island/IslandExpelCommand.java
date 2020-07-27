@@ -1,6 +1,7 @@
 package world.bentobox.bentobox.api.commands.island;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.bukkit.Sound;
@@ -16,12 +17,11 @@ import world.bentobox.bentobox.database.objects.Island;
 /**
  * @author tastybento
  * @since 1.4.0
- *
  */
 public class IslandExpelCommand extends CompositeCommand {
 
     private static final String CANNOT_EXPEL = "commands.island.expel.cannot-expel";
-    private static final String SUCCESS = "general.success";
+    private static final String SUCCESS = "commands.island.expel.success";
 
     private @Nullable User target;
 
@@ -52,8 +52,10 @@ public class IslandExpelCommand extends CompositeCommand {
             return false;
         }
         // Check rank to use command
-        if (getIslands().getIsland(getWorld(), user).getRank(user) < getPlugin().getSettings().getRankCommand(getUsage())) {
-            user.sendMessage("general.errors.no-permission");
+        Island island = getIslands().getIsland(getWorld(), user);
+        int rank = Objects.requireNonNull(island).getRank(user);
+        if (rank < island.getRankCommand(getUsage())) {
+            user.sendMessage("general.errors.insufficient-rank", TextVariables.RANK, user.getTranslation(getPlugin().getRanksManager().getRank(rank)));
             return false;
         }
         // Get target player
@@ -84,7 +86,9 @@ public class IslandExpelCommand extends CompositeCommand {
             return false;
         }
         // Cannot ban ops
-        if (target.isOp() || target.hasPermission("admin.noexpel")) {
+        if (target.isOp() ||
+                target.hasPermission(this.getPermissionPrefix() + "admin.noexpel") ||
+                target.hasPermission(this.getPermissionPrefix() + "mod.bypassexpel")) {
             user.sendMessage(CANNOT_EXPEL);
             return false;
         }
@@ -112,14 +116,14 @@ public class IslandExpelCommand extends CompositeCommand {
         island.getWorld().playSound(target.getLocation(), Sound.ENTITY_GENERIC_EXPLODE, 1F, 1F);
         if (getIslands().hasIsland(getWorld(), target)) {
             // Success
-            user.sendMessage(SUCCESS);
+            user.sendMessage(SUCCESS, TextVariables.NAME, target.getName());
             // Teleport home
-            getIslands().homeTeleport(getWorld(), target.getPlayer());
+            getIslands().homeTeleportAsync(getWorld(), target.getPlayer());
             return true;
         } else if (getIslands().getSpawn(getWorld()).isPresent()){
             // Success
-            user.sendMessage(SUCCESS);
-            getIslands().spawnTeleport(getWorld(), user.getPlayer());
+            user.sendMessage(SUCCESS, TextVariables.NAME, target.getName());
+            getIslands().spawnTeleport(getWorld(), target.getPlayer());
             return true;
         } else if (getIWM().getAddon(getWorld())
                 .map(gm -> gm.getPlayerCommand()
@@ -128,14 +132,12 @@ public class IslandExpelCommand extends CompositeCommand {
                 .orElse(false)
                 && target.performCommand(this.getTopLabel() + " create")) {
             getAddon().logWarning("Expel: " + target.getName() + " had no island, so one was created");
-            user.sendMessage(SUCCESS);
+            user.sendMessage(SUCCESS, TextVariables.NAME, target.getName());
             return true;
         }
 
         getAddon().logError("Expel: " + target.getName() + " had no island, and one could not be created");
         user.sendMessage(CANNOT_EXPEL);
         return false;
-
     }
-
 }

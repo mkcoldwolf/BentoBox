@@ -1,9 +1,13 @@
 package world.bentobox.bentobox.listeners.flags.protection;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
@@ -18,6 +22,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Server;
+import org.bukkit.Tag;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -28,6 +33,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Slime;
 import org.bukkit.entity.Zombie;
+import org.bukkit.event.Event.Result;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityInteractEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -58,6 +64,7 @@ import world.bentobox.bentobox.managers.FlagsManager;
 import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
+import world.bentobox.bentobox.managers.PlaceholdersManager;
 import world.bentobox.bentobox.managers.PlayersManager;
 import world.bentobox.bentobox.util.Util;
 
@@ -88,14 +95,14 @@ public class PhysicalInteractionListenerTest {
         when(server.getWorld("world")).thenReturn(world);
         when(server.getVersion()).thenReturn("BSB_Mocking");
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
 
-        PowerMockito.mockStatic(Bukkit.class);
+        PowerMockito.mockStatic(Bukkit.class, Mockito.RETURNS_MOCKS);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         SkullMeta skullMeta = mock(SkullMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(skullMeta);
@@ -128,8 +135,8 @@ public class PhysicalInteractionListenerTest {
 
         // Fake players
         Settings settings = mock(Settings.class);
-        Mockito.when(plugin.getSettings()).thenReturn(settings);
-        Mockito.when(settings.getFakePlayers()).thenReturn(new HashSet<>());
+        when(plugin.getSettings()).thenReturn(settings);
+        when(settings.getFakePlayers()).thenReturn(new HashSet<>());
 
         // Users
         User.setPlugin(plugin);
@@ -142,14 +149,19 @@ public class PhysicalInteractionListenerTest {
         Answer<String> answer = invocation -> (String)Arrays.asList(invocation.getArguments()).get(1);
         when(lm.get(any(), any())).thenAnswer(answer);
 
+        // Placeholders
+        PlaceholdersManager placeholdersManager = mock(PlaceholdersManager.class);
+        when(plugin.getPlaceholdersManager()).thenReturn(placeholdersManager);
+        when(placeholdersManager.replacePlaceholders(any(), any())).thenAnswer(answer);
+
         // Player name
         PlayersManager pm = mock(PlayersManager.class);
-        when(pm.getName(Mockito.any())).thenReturn("tastybento");
+        when(pm.getName(any())).thenReturn("tastybento");
         when(plugin.getPlayers()).thenReturn(pm);
 
         // World Settings
         WorldSettings ws = mock(WorldSettings.class);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         Map<String, Boolean> worldFlags = new HashMap<>();
         when(ws.getWorldFlags()).thenReturn(worldFlags);
 
@@ -158,14 +170,14 @@ public class PhysicalInteractionListenerTest {
         when(plugin.getIslands()).thenReturn(im);
         Island island = mock(Island.class);
         Optional<Island> optional = Optional.of(island);
-        when(im.getProtectedIslandAt(Mockito.any())).thenReturn(optional);
+        when(im.getProtectedIslandAt(any())).thenReturn(optional);
 
         // Notifier
         notifier = mock(Notifier.class);
         when(plugin.getNotifier()).thenReturn(notifier);
 
         PowerMockito.mockStatic(Util.class);
-        when(Util.getWorld(Mockito.any())).thenReturn(mock(World.class));
+        when(Util.getWorld(any())).thenReturn(mock(World.class));
 
         // Player setup
         player = mock(Player.class);
@@ -179,14 +191,20 @@ public class PhysicalInteractionListenerTest {
         clickedBlock = mock(Block.class);
 
         // Addon
-        when(iwm.getAddon(Mockito.any())).thenReturn(Optional.empty());
+        when(iwm.getAddon(any())).thenReturn(Optional.empty());
 
+        // Util strip spaces
+        when(Util.stripSpaceAfterColorCodes(anyString())).thenCallRealMethod();
 
+        // Tags
+        when(Tag.PRESSURE_PLATES.isTagged(any(Material.class))).thenReturn(true);
+        when(Tag.WOODEN_BUTTONS.isTagged(any(Material.class))).thenReturn(true);
     }
 
     @After
-    public void cleanUp() {
-        User.removePlayer(player);
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -197,7 +215,7 @@ public class PhysicalInteractionListenerTest {
         when(clickedBlock.getType()).thenReturn(Material.STONE);
         PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.RIGHT_CLICK_AIR, item, clickedBlock, BlockFace.UP);
         new PhysicalInteractionListener().onPlayerInteract(e);
-        assertFalse(e.isCancelled());
+        assertEquals(Result.ALLOW, e.useInteractedBlock());
     }
 
     /**
@@ -206,9 +224,10 @@ public class PhysicalInteractionListenerTest {
     @Test
     public void testOnPlayerInteractWrongMaterial() {
         when(clickedBlock.getType()).thenReturn(Material.STONE);
+        when(Tag.PRESSURE_PLATES.isTagged(clickedBlock.getType())).thenReturn(false);
         PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.PHYSICAL, item, clickedBlock, BlockFace.UP);
         new PhysicalInteractionListener().onPlayerInteract(e);
-        assertFalse(e.isCancelled());
+        assertEquals(Result.ALLOW, e.useInteractedBlock());
     }
 
     /**
@@ -220,8 +239,9 @@ public class PhysicalInteractionListenerTest {
         PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.PHYSICAL, item, clickedBlock, BlockFace.UP);
         PhysicalInteractionListener i = new PhysicalInteractionListener();
         i.onPlayerInteract(e);
-        assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq("protection.protected"));
+        assertEquals(Result.DENY, e.useInteractedBlock());
+        assertEquals(Result.DENY, e.useItemInHand());
+        verify(notifier).notify(any(), eq("protection.protected"));
     }
 
     /**
@@ -234,7 +254,7 @@ public class PhysicalInteractionListenerTest {
         PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.PHYSICAL, item, clickedBlock, BlockFace.UP);
         PhysicalInteractionListener i = new PhysicalInteractionListener();
         i.onPlayerInteract(e);
-        assertFalse(e.isCancelled());
+        assertEquals(Result.ALLOW, e.useInteractedBlock());
     }
 
     /**
@@ -242,12 +262,12 @@ public class PhysicalInteractionListenerTest {
      */
     @Test
     public void testOnPlayerInteractFarmlandPermission() {
-        when(player.hasPermission(Mockito.anyString())).thenReturn(true);
+        when(player.hasPermission(anyString())).thenReturn(true);
         when(clickedBlock.getType()).thenReturn(Material.FARMLAND);
         PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.PHYSICAL, item, clickedBlock, BlockFace.UP);
         PhysicalInteractionListener i = new PhysicalInteractionListener();
         i.onPlayerInteract(e);
-        assertFalse(e.isCancelled());
+        assertEquals(Result.ALLOW, e.useInteractedBlock());
     }
 
     /**
@@ -259,8 +279,9 @@ public class PhysicalInteractionListenerTest {
         PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.PHYSICAL, item, clickedBlock, BlockFace.UP);
         PhysicalInteractionListener i = new PhysicalInteractionListener();
         i.onPlayerInteract(e);
-        assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq("protection.protected"));
+        assertEquals(Result.DENY, e.useInteractedBlock());
+        assertEquals(Result.DENY, e.useItemInHand());
+        verify(notifier).notify(any(), eq("protection.protected"));
     }
 
     /**
@@ -273,7 +294,8 @@ public class PhysicalInteractionListenerTest {
             PlayerInteractEvent e  = new PlayerInteractEvent(player, Action.PHYSICAL, item, clickedBlock, BlockFace.UP);
             PhysicalInteractionListener i = new PhysicalInteractionListener();
             i.onPlayerInteract(e);
-            assertTrue(e.isCancelled());
+            assertEquals(Result.DENY, e.useInteractedBlock());
+            assertEquals(Result.DENY, e.useItemInHand());
         });
     }
 
@@ -340,5 +362,4 @@ public class PhysicalInteractionListenerTest {
             assertTrue(p.name() +" failed", e.isCancelled());
         });
     }
-
 }

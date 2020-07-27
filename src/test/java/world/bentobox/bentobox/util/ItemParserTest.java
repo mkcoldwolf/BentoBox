@@ -17,6 +17,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionData;
 import org.bukkit.potion.PotionType;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -47,7 +48,7 @@ public class ItemParserTest {
          */
         bannerMeta = mock(BannerMeta.class);
         when(itemFactory.getItemMeta(Mockito.any())).thenAnswer((Answer<ItemMeta>) invocation -> {
-            switch (invocation.getArgumentAt(0, Material.class)) {
+            switch (invocation.getArgument(0, Material.class)) {
             case RED_BANNER:
             case WHITE_BANNER:
                 return bannerMeta;
@@ -61,6 +62,11 @@ public class ItemParserTest {
             }
         });
 
+    }
+
+    @After
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     @Test

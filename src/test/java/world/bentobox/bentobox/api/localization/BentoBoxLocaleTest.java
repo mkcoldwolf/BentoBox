@@ -1,12 +1,12 @@
 /**
- * 
+ *
  */
 package world.bentobox.bentobox.api.localization;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -20,6 +20,7 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BannerMeta;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -49,7 +50,7 @@ public class BentoBoxLocaleTest {
         // Mock item factory (for itemstacks)
         ItemFactory itemFactory = mock(ItemFactory.class);
         bannerMeta = mock(BannerMeta.class);
-        when(itemFactory.getItemMeta(any())).thenReturn(bannerMeta);       
+        when(itemFactory.getItemMeta(any())).thenReturn(bannerMeta);
         when(Bukkit.getItemFactory()).thenReturn(itemFactory);
 
         Locale locale = Locale.US;
@@ -60,14 +61,12 @@ public class BentoBoxLocaleTest {
         authors.add("tastybento2");
         config.set("meta.authors", authors );
         config.set("reference.to.test", "test result");
-        localeObject = new BentoBoxLocale(locale, config);   
+        localeObject = new BentoBoxLocale(locale, config);
     }
 
-    /**
-     * Test method for {@link world.bentobox.bentobox.api.localization.BentoBoxLocale#BentoBoxLocale(java.util.Locale, org.bukkit.configuration.file.YamlConfiguration)}.
-     */
-    @Test
-    public void testBentoBoxLocale() {
+    @After
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     /**

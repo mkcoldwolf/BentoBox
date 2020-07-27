@@ -5,17 +5,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import org.bukkit.Bukkit;
-
-import com.google.common.collect.ImmutableSet;
-
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.commands.ConfirmableCommand;
-import world.bentobox.bentobox.api.events.IslandBaseEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
+import world.bentobox.bentobox.managers.RanksManager;
 import world.bentobox.bentobox.util.Util;
 
 public class AdminUnregisterCommand extends ConfirmableCommand {
@@ -39,7 +35,7 @@ public class AdminUnregisterCommand extends ConfirmableCommand {
             return false;
         }
         // Get target
-        UUID targetUUID = getPlayers().getUUID(args.get(0));
+        UUID targetUUID = Util.getUUID(args.get(0));
         if (targetUUID == null) {
             user.sendMessage("general.errors.unknown-player", TextVariables.NAME, args.get(0));
             return false;
@@ -56,28 +52,38 @@ public class AdminUnregisterCommand extends ConfirmableCommand {
         // Get target
         UUID targetUUID = getPlayers().getUUID(args.get(0));
         // Everything's fine, we can set the island as spawn :)
-        askConfirmation(user,  () -> unregisterPlayer(user, targetUUID));
+        askConfirmation(user,  () -> unregisterPlayer(user, args.get(0), targetUUID));
         return true;
     }
 
-    private void unregisterPlayer(User user, UUID targetUUID) {
+    void unregisterPlayer(User user, String targetName, UUID targetUUID) {
         // Unregister island
         Island oldIsland = getIslands().getIsland(getWorld(), targetUUID);
-        user.sendMessage("commands.admin.unregister.unregistered-island", "[xyz]", Util.xyz(oldIsland.getCenter().toVector()));
-        IslandBaseEvent event = IslandEvent.builder()
-                .island(oldIsland)
-                .location(oldIsland.getCenter())
-                .reason(IslandEvent.Reason.UNREGISTERED)
-                .involvedPlayer(targetUUID)
-                .admin(true)
-                .build();
-        Bukkit.getServer().getPluginManager().callEvent(event);
+        if (oldIsland == null) return;
+        IslandEvent.builder()
+        .island(oldIsland)
+        .location(oldIsland.getCenter())
+        .reason(IslandEvent.Reason.UNREGISTERED)
+        .involvedPlayer(targetUUID)
+        .admin(true)
+        .build();
+        IslandEvent.builder()
+        .island(oldIsland)
+        .involvedPlayer(targetUUID)
+        .admin(true)
+        .reason(IslandEvent.Reason.RANK_CHANGE)
+        .rankChange(RanksManager.OWNER_RANK, RanksManager.VISITOR_RANK)
+        .build();
         // Remove all island members
-        new ImmutableSet.Builder<UUID>().addAll(oldIsland.getMembers().keySet()).build().forEach(m -> {
+        oldIsland.getMemberSet().forEach(m -> {
             getIslands().removePlayer(getWorld(), m);
             getPlayers().clearHomeLocations(getWorld(), m);
         });
-        user.sendMessage("general.success");
+        // Remove all island players that reference this island
+        oldIsland.getMembers().clear();
+        getIslands().save(oldIsland);
+        user.sendMessage("commands.admin.unregister.unregistered-island", "[xyz]", Util.xyz(oldIsland.getCenter().toVector()),
+                TextVariables.NAME, targetName);
     }
 
     @Override

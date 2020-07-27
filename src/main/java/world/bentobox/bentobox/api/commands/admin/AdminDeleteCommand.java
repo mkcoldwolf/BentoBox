@@ -5,8 +5,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.bukkit.util.Vector;
+
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.commands.ConfirmableCommand;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
+import world.bentobox.bentobox.api.events.island.IslandEvent.Reason;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
@@ -27,12 +31,12 @@ public class AdminDeleteCommand extends ConfirmableCommand {
 
     @Override
     public boolean canExecute(User user, String label, List<String> args) {
-		if (args.size() != 1) {
-			showHelp(this, user);
-			return false;
-		}
+        if (args.size() != 1) {
+            showHelp(this, user);
+            return false;
+        }
         // Get target
-        UUID targetUUID = getPlayers().getUUID(args.get(0));
+        UUID targetUUID = Util.getUUID(args.get(0));
         if (targetUUID == null) {
             user.sendMessage("general.errors.unknown-player", TextVariables.NAME, args.get(0));
             return false;
@@ -65,16 +69,25 @@ public class AdminDeleteCommand extends ConfirmableCommand {
 
     private void deletePlayer(User user, UUID targetUUID) {
         // Delete player and island
-        user.sendMessage("commands.admin.delete.deleted-island", "[xyz]", Util.xyz(getIslands().getIsland(getWorld(), targetUUID).getCenter().toVector()));
-
         // Get the target's island
         Island oldIsland = getIslands().getIsland(getWorld(), targetUUID);
+        Vector vector = null;
         if (oldIsland != null) {
+            // Fire island preclear event
+            IslandEvent.builder()
+            .involvedPlayer(user.getUniqueId())
+            .reason(Reason.PRECLEAR)
+            .island(oldIsland)
+            .oldIsland(oldIsland)
+            .location(oldIsland.getCenter())
+            .build();
             // Check if player is online and on the island
             User target = User.getInstance(targetUUID);
             // Remove them from this island (it still exists and will be deleted later)
             getIslands().removePlayer(getWorld(), targetUUID);
             if (target.isOnline()) {
+                // Execute commands when leaving
+                Util.runCommands(user, getIWM().getOnLeaveCommands(getWorld()), "leave");
                 // Remove money inventory etc.
                 if (getIWM().isOnLeaveResetEnderChest(getWorld())) {
                     target.getPlayer().getEnderChest().clear();
@@ -85,11 +98,30 @@ public class AdminDeleteCommand extends ConfirmableCommand {
                 if (getSettings().isUseEconomy() && getIWM().isOnLeaveResetMoney(getWorld())) {
                     getPlugin().getVault().ifPresent(vault -> vault.withdraw(target, vault.getBalance(target)));
                 }
+                // Reset the health
+                if (getIWM().isOnLeaveResetHealth(getWorld())) {
+                    target.getPlayer().setHealth(20.0D);
+                }
+
+                // Reset the hunger
+                if (getIWM().isOnLeaveResetHunger(getWorld())) {
+                    target.getPlayer().setFoodLevel(20);
+                }
+
+                // Reset the XP
+                if (getIWM().isOnLeaveResetXP(getWorld())) {
+                    target.getPlayer().setTotalExperience(0);
+                }
             }
-            getIslands().deleteIsland(oldIsland, true);
+            vector = oldIsland.getCenter().toVector();
+            getIslands().deleteIsland(oldIsland, true, targetUUID);
         }
         getPlayers().clearHomeLocations(getWorld(), targetUUID);
-        user.sendMessage("general.success");
+        if (vector == null) {
+            user.sendMessage("general.success");
+        } else {
+            user.sendMessage("commands.admin.delete.deleted-island", "[xyz]", Util.xyz(vector));
+        }
     }
 
     @Override

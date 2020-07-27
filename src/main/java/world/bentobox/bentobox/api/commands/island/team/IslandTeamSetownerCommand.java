@@ -8,11 +8,12 @@ import java.util.UUID;
 import org.bukkit.Bukkit;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
-import world.bentobox.bentobox.api.events.IslandBaseEvent;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.events.team.TeamEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
+import world.bentobox.bentobox.managers.RanksManager;
 import world.bentobox.bentobox.util.Util;
 
 public class IslandTeamSetownerCommand extends CompositeCommand {
@@ -23,7 +24,7 @@ public class IslandTeamSetownerCommand extends CompositeCommand {
 
     @Override
     public void setup() {
-        setPermission("island.team");
+        setPermission("island.team.setowner");
         setOnlyPlayer(true);
         setParametersHelp("commands.island.team.setowner.parameters");
         setDescription("commands.island.team.setowner.description");
@@ -63,20 +64,34 @@ public class IslandTeamSetownerCommand extends CompositeCommand {
         }
         // Fire event so add-ons can run commands, etc.
         Island island = getIslands().getIsland(getWorld(), playerUUID);
-        IslandBaseEvent event = TeamEvent.builder()
+        if (TeamEvent.builder()
                 .island(island)
                 .reason(TeamEvent.Reason.SETOWNER)
                 .involvedPlayer(targetUUID)
-                .build();
-        Bukkit.getServer().getPluginManager().callEvent(event);
-        if (event.isCancelled()) {
+                .build()
+                .isCancelled()) {
             return false;
         }
         getIslands().setOwner(getWorld(), user, targetUUID);
+        // Call the event for the new owner
+        IslandEvent.builder()
+                .island(island)
+                .involvedPlayer(targetUUID)
+                .admin(false)
+                .reason(IslandEvent.Reason.RANK_CHANGE)
+                .rankChange(island.getRank(User.getInstance(targetUUID)), RanksManager.OWNER_RANK)
+                .build();
+        // Call the event for the previous owner
+        IslandEvent.builder()
+                .island(island)
+                .involvedPlayer(playerUUID)
+                .admin(false)
+                .reason(IslandEvent.Reason.RANK_CHANGE)
+                .rankChange(RanksManager.OWNER_RANK, island.getRank(user))
+                .build();
         getIslands().save(island);
         return true;
     }
-
 
     @Override
     public Optional<List<String>> tabComplete(User user, String alias, List<String> args) {

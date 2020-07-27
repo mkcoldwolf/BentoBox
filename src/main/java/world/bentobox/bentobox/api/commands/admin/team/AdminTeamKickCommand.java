@@ -3,25 +3,33 @@ package world.bentobox.bentobox.api.commands.admin.team;
 import java.util.List;
 import java.util.UUID;
 
-import org.bukkit.Bukkit;
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
-import world.bentobox.bentobox.api.events.IslandBaseEvent;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.events.team.TeamEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
+import world.bentobox.bentobox.managers.RanksManager;
+import world.bentobox.bentobox.util.Util;
 
+/**
+ * Kicks the specified player from the island team.
+ * @author tastybento
+ */
 public class AdminTeamKickCommand extends CompositeCommand {
+
+    private @Nullable UUID targetUUID;
 
     public AdminTeamKickCommand(CompositeCommand parent) {
         super(parent, "kick");
-
     }
 
     @Override
     public void setup() {
-        setPermission("admin.team");
+        setPermission("mod.team");
         setParametersHelp("commands.admin.team.kick.parameters");
         setDescription("commands.admin.team.kick.description");
     }
@@ -35,7 +43,7 @@ public class AdminTeamKickCommand extends CompositeCommand {
         }
 
         // Get target
-        UUID targetUUID = getPlayers().getUUID(args.get(0));
+        targetUUID = Util.getUUID(args.get(0));
         if (targetUUID == null) {
             user.sendMessage("general.errors.unknown-player", TextVariables.NAME, args.get(0));
             return false;
@@ -49,25 +57,35 @@ public class AdminTeamKickCommand extends CompositeCommand {
     }
 
     @Override
-    public boolean execute(User user, String label, List<String> args) {
-        UUID targetUUID = getPlayers().getUUID(args.get(0));
-        if (targetUUID.equals(getIslands().getOwner(getWorld(), targetUUID))) {
+    public boolean execute(User user, String label, @NonNull List<String> args) {
+        Island island = getIslands().getIsland(getWorld(), targetUUID);
+
+        if (targetUUID.equals(island.getOwner())) {
             user.sendMessage("commands.admin.team.kick.cannot-kick-owner");
-            getIslands().getIsland(getWorld(), targetUUID).showMembers(user);
+            island.showMembers(user);
             return false;
         }
-        User.getInstance(targetUUID).sendMessage("commands.admin.team.kick.admin-kicked");
+        User target = User.getInstance(targetUUID);
+        target.sendMessage("commands.admin.team.kick.admin-kicked");
+
         getIslands().removePlayer(getWorld(), targetUUID);
-        user.sendMessage("general.success");
+        getPlayers().clearHomeLocations(getWorld(), targetUUID);
+        user.sendMessage("commands.admin.team.kick.success", TextVariables.NAME, target.getName(), "[owner]", getPlayers().getName(island.getOwner()));
+
         // Fire event so add-ons know
-        Island island = getIslands().getIsland(getWorld(), targetUUID);
-        IslandBaseEvent event = TeamEvent.builder()
-                .island(island)
-                .reason(TeamEvent.Reason.KICK)
-                .involvedPlayer(targetUUID)
-                .admin(true)
-                .build();
-        Bukkit.getServer().getPluginManager().callEvent(event);
+        TeamEvent.builder()
+        .island(island)
+        .reason(TeamEvent.Reason.KICK)
+        .involvedPlayer(targetUUID)
+        .admin(true)
+        .build();
+        IslandEvent.builder()
+        .island(island)
+        .involvedPlayer(targetUUID)
+        .admin(true)
+        .reason(IslandEvent.Reason.RANK_CHANGE)
+        .rankChange(island.getRank(target), RanksManager.VISITOR_RANK)
+        .build();
         return true;
     }
 }

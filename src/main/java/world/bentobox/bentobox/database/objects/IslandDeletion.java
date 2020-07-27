@@ -4,14 +4,19 @@ import java.util.UUID;
 
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
 
 import com.google.gson.annotations.Expose;
+
+import world.bentobox.bentobox.BentoBox;
 
 /**
  * Data object to store islands in deletion
  * @author tastybento
  * @since 1.1
  */
+@Table(name = "IslandDeletion")
 public class IslandDeletion implements DataObject {
 
     @Expose
@@ -32,24 +37,38 @@ public class IslandDeletion implements DataObject {
     @Expose
     private int maxZChunk;
 
+    @Expose
+    private int minX;
+
+    @Expose
+    private int minZ;
+
+    @Expose
+    private int maxX;
+
+    @Expose
+    private int maxZ;
+
+    @Expose
+    BoundingBox box;
+
     public IslandDeletion() {}
 
     public IslandDeletion(Island island) {
+        // Get the world's island distance
+        int islandDistance = BentoBox.getInstance().getIWM().getIslandDistance(island.getWorld());
+        int range = Math.min(island.getMaxEverProtectionRange(), islandDistance);
         uniqueId = UUID.randomUUID().toString();
         location = island.getCenter();
-        minXChunk =  (location.getBlockX() - island.getMaxEverProtectionRange()) >> 4;
-        maxXChunk = (island.getMaxEverProtectionRange() + location.getBlockX() - 1) >> 4;
-        minZChunk = (location.getBlockZ() - island.getMaxEverProtectionRange()) >> 4;
-        maxZChunk = (island.getMaxEverProtectionRange() + location.getBlockZ() - 1) >> 4;
-    }
-
-    public IslandDeletion(Location location, int minXChunk, int maxXChunk, int minZChunk, int maxZChunk) {
-        this.uniqueId = UUID.randomUUID().toString();
-        this.location = location;
-        this.minXChunk = minXChunk;
-        this.maxXChunk = maxXChunk;
-        this.minZChunk = minZChunk;
-        this.maxZChunk = maxZChunk;
+        minX = location.getBlockX() - range;
+        minXChunk =  minX >> 4;
+        maxX = range + location.getBlockX();
+        maxXChunk = maxX >> 4;
+        minZ = location.getBlockZ() - range;
+        minZChunk = minZ >> 4;
+        maxZ = range + location.getBlockZ();
+        maxZChunk = maxZ >> 4;
+        box = BoundingBox.of(new Vector(minX, 0, minZ), new Vector(maxX, 255, maxZ));
     }
 
     /* (non-Javadoc)
@@ -68,13 +87,8 @@ public class IslandDeletion implements DataObject {
         }
         IslandDeletion other = (IslandDeletion) obj;
         if (uniqueId == null) {
-            if (other.uniqueId != null) {
-                return false;
-            }
-        } else if (!uniqueId.equals(other.uniqueId)) {
-            return false;
-        }
-        return true;
+            return other.uniqueId == null;
+        } else return uniqueId.equals(other.uniqueId);
     }
 
     /**
@@ -170,9 +184,70 @@ public class IslandDeletion implements DataObject {
         this.minZChunk = minZChunk;
     }
 
+    public int getMinX() {
+        return minX;
+    }
+
+    public void setMinX(int minX) {
+        this.minX = minX;
+    }
+
+    public int getMinZ() {
+        return minZ;
+    }
+
+    public void setMinZ(int minZ) {
+        this.minZ = minZ;
+    }
+
+    public int getMaxX() {
+        return maxX;
+    }
+
+    public void setMaxX(int maxX) {
+        this.maxX = maxX;
+    }
+
+    public int getMaxZ() {
+        return maxZ;
+    }
+
+    public void setMaxZ(int maxZ) {
+        this.maxZ = maxZ;
+    }
+
     @Override
     public void setUniqueId(String uniqueId) {
         this.uniqueId = uniqueId;
     }
+
+    public boolean inBounds(int x, int z) {
+        return box.contains(new Vector(x, 0, z));
+    }
+
+    /**
+     * @return the box
+     */
+    public BoundingBox getBox() {
+        return box;
+    }
+
+    /**
+     * @param box the box to set
+     */
+    public void setBox(BoundingBox box) {
+        this.box = box;
+    }
+
+    /* (non-Javadoc)
+     * @see java.lang.Object#toString()
+     */
+    @Override
+    public String toString() {
+        return "IslandDeletion [uniqueId=" + uniqueId + ", location=" + location + ", minXChunk=" + minXChunk
+                + ", maxXChunk=" + maxXChunk + ", minZChunk=" + minZChunk + ", maxZChunk=" + maxZChunk + ", minX="
+                + minX + ", minZ=" + minZ + ", maxX=" + maxX + ", maxZ=" + maxZ + ", box=" + box + "]";
+    }
+
 }
 

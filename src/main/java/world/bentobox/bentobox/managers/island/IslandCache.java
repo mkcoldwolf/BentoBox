@@ -1,18 +1,23 @@
 package world.bentobox.bentobox.managers.island;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
 
+import world.bentobox.bentobox.BentoBox;
+import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.util.Util;
 
@@ -21,19 +26,19 @@ import world.bentobox.bentobox.util.Util;
  */
 public class IslandCache {
     @NonNull
-    private Map<@NonNull Location, @NonNull Island> islandsByLocation;
+    private final Map<@NonNull Location, @NonNull Island> islandsByLocation;
     /**
      * Map of all islands with island uniqueId as key
      */
     @NonNull
-    private Map<@NonNull String, @NonNull Island> islandsById;
+    private final Map<@NonNull String, @NonNull Island> islandsById;
     /**
      * Every player who is associated with an island is in this map.
      */
     @NonNull
-    private Map<@NonNull World, @NonNull Map<@NonNull UUID, @NonNull Island>> islandsByUUID;
+    private final Map<@NonNull World, @NonNull Map<@NonNull UUID, @NonNull Island>> islandsByUUID;
     @NonNull
-    private Map<@NonNull World, @NonNull IslandGrid> grids;
+    private final Map<@NonNull World, @NonNull IslandGrid> grids;
 
     public IslandCache() {
         islandsByLocation = new HashMap<>();
@@ -62,7 +67,7 @@ public class IslandCache {
             // Make world
             islandsByUUID.putIfAbsent(island.getWorld(), new HashMap<>());
             // Only add islands to this map if they are owned
-            if (island.getOwner() != null) {
+            if (island.isOwned()) {
                 islandsByUUID.get(island.getWorld()).put(island.getOwner(), island);
                 island.getMemberSet().forEach(member -> islandsByUUID.get(island.getWorld()).put(member, island));
             }
@@ -77,8 +82,7 @@ public class IslandCache {
      * @param island island to associate with this uuid. Only one island can be associated per world.
      */
     public void addPlayer(@NonNull UUID uuid, @NonNull Island island) {
-        islandsByUUID.putIfAbsent(island.getWorld(), new HashMap<>());
-        islandsByUUID.get(island.getWorld()).put(uuid, island);
+        islandsByUUID.computeIfAbsent(island.getWorld(), k -> new HashMap<>()).put(uuid, island);
     }
 
     /**
@@ -87,8 +91,7 @@ public class IslandCache {
      * @return true if successfully added, false if not
      */
     private boolean addToGrid(@NonNull Island newIsland) {
-        grids.putIfAbsent(newIsland.getWorld(), new IslandGrid());
-        return grids.get(newIsland.getWorld()).addToGrid(newIsland);
+        return grids.computeIfAbsent(newIsland.getWorld(), k -> new IslandGrid()).addToGrid(newIsland);
     }
 
     public void clear() {
@@ -159,18 +162,32 @@ public class IslandCache {
     }
 
     /**
+     * Returns an <strong>unmodifiable collection</strong> of all the islands (even those who may be unowned) in the specified world.
+     * @param world World of the gamemode.
+     * @return unmodifiable collection containing all the islands in the specified world.
+     * @since 1.7.0
+     */
+    @NonNull
+    public Collection<Island> getIslands(@NonNull World world) {
+        World overworld = Util.getWorld(world);
+        List<Island> islandsInWorld = islandsByLocation.entrySet().stream()
+                .filter(entry -> overworld.equals(Util.getWorld(entry.getKey().getWorld()))) // shouldn't make NPEs
+                .map(Map.Entry::getValue)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        return Collections.unmodifiableCollection(islandsInWorld);
+    }
+
+    /**
      * @param world world to check
      * @param uuid uuid of player to check
+     * @param minimumRank minimum rank requested
      * @return set of UUID's of island members. If there is no island, this set will be empty
      */
     @NonNull
-    public Set<UUID> getMembers(@NonNull World world, @NonNull UUID uuid) {
-        islandsByUUID.putIfAbsent(Util.getWorld(world), new HashMap<>());
-        Island island = islandsByUUID.get(Util.getWorld(world)).get(uuid);
-        if (island != null) {
-            return island.getMemberSet();
-        }
-        return new HashSet<>(0);
+    public Set<UUID> getMembers(@NonNull World world, @NonNull UUID uuid, int minimumRank) {
+        Island island = islandsByUUID.computeIfAbsent(Util.getWorld(world), k -> new HashMap<>()).get(uuid);
+        return island != null ? island.getMemberSet(minimumRank) : new HashSet<>();
     }
 
     /**
@@ -180,12 +197,9 @@ public class IslandCache {
      */
     @Nullable
     public UUID getOwner(@NonNull World world, @NonNull UUID uuid) {
-        islandsByUUID.putIfAbsent(Util.getWorld(world), new HashMap<>());
-        Island island = islandsByUUID.get(Util.getWorld(world)).get(uuid);
-        if (island != null) {
-            return island.getOwner();
-        }
-        return null;
+        Island island = islandsByUUID.computeIfAbsent(Util.getWorld(world), k -> new HashMap<>()).get(uuid);
+        return island != null ? island.getOwner() : null;
+
     }
 
     /**
@@ -194,8 +208,7 @@ public class IslandCache {
      * @return true if player has island and owns it
      */
     public boolean hasIsland(@NonNull World world, @NonNull UUID uuid) {
-        islandsByUUID.putIfAbsent(Util.getWorld(world), new HashMap<>());
-        Island island = islandsByUUID.get(Util.getWorld(world)).get(uuid);
+        Island island = islandsByUUID.computeIfAbsent(Util.getWorld(world), k -> new HashMap<>()).get(uuid);
         return island != null && uuid.equals(island.getOwner());
     }
 
@@ -208,11 +221,9 @@ public class IslandCache {
      */
     @Nullable
     public Island removePlayer(@NonNull World world, @NonNull UUID uuid) {
-        world = Util.getWorld(world);
-        islandsByUUID.putIfAbsent(world, new HashMap<>());
-        Island island = islandsByUUID.get(world).get(uuid);
+        Island island = islandsByUUID.computeIfAbsent(Util.getWorld(world), k -> new HashMap<>()).get(uuid);
         if (island != null) {
-            if (island.getOwner() != null && island.getOwner().equals(uuid)) {
+            if (uuid.equals(island.getOwner())) {
                 // Clear ownership and members
                 island.getMembers().clear();
                 island.setOwner(null);
@@ -250,7 +261,9 @@ public class IslandCache {
      */
     public void setOwner(@NonNull Island island, @Nullable UUID newOwnerUUID) {
         island.setOwner(newOwnerUUID);
-        islandsByUUID.computeIfAbsent(Util.getWorld(island.getWorld()), k -> new HashMap<>()).put(newOwnerUUID, island);
+        if (newOwnerUUID != null) {
+            islandsByUUID.computeIfAbsent(Util.getWorld(island.getWorld()), k -> new HashMap<>()).put(newOwnerUUID, island);
+        }
         islandsByLocation.put(island.getCenter(), island);
         islandsById.put(island.getUniqueId(), island);
     }
@@ -290,5 +303,26 @@ public class IslandCache {
     public void resetAllFlags(World world) {
         World w = Util.getWorld(world);
         islandsById.values().stream().filter(i -> i.getWorld().equals(w)).forEach(Island::setFlagsDefaults);
+    }
+
+    /**
+     * Resets a specific flag on all game mode islands in world to default setting
+     * @param world - world
+     * @param flag - flag to reset
+     * @since 1.8.0
+     */
+    public void resetFlag(World world, Flag flag) {
+        World w = Util.getWorld(world);
+        int setting = BentoBox.getInstance().getIWM().getDefaultIslandFlags(w).getOrDefault(flag, flag.getDefaultRank());
+        islandsById.values().stream().filter(i -> i.getWorld().equals(w)).forEach(i -> i.setFlag(flag, setting));
+    }
+
+    /**
+     * Get all the island ids
+     * @return set of ids
+     * @since 1.8.0
+     */
+    public Set<String> getAllIslandIds() {
+        return islandsById.keySet();
     }
 }

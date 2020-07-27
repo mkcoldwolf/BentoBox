@@ -1,13 +1,16 @@
 package world.bentobox.bentobox.listeners;
 
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World.Environment;
+import org.bukkit.block.Block;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.eclipse.jdt.annotation.NonNull;
 
 import world.bentobox.bentobox.BentoBox;
@@ -22,21 +25,34 @@ public class BlockEndDragon implements Listener {
     }
 
     /**
-     * This listener moves the end exit island high up in the sky
-     * @param e - event
+     * Adds a portal frame at the top of the world, when a player joins an island End world.
+     * This prevents the Ender Dragon from spawning: if any portal frame exists, then the dragon is considered killed already.
+     * @param event PlayerChangedWorldEvent
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
-    public void onEnd(ChunkLoadEvent e) {
-        if (!Flags.REMOVE_END_EXIT_ISLAND.isSetForWorld(e.getWorld())
-                || !e.getWorld().getEnvironment().equals(Environment.THE_END)
-                || !plugin.getIWM().inWorld(e.getWorld())
-                || !plugin.getIWM().isEndGenerate(e.getWorld())
-                || !plugin.getIWM().isEndIslands(e.getWorld())
-                || !(e.getChunk().getX() == 0 && e.getChunk().getZ() == 0)) {
+    public void onPlayerChangeWorld(PlayerChangedWorldEvent event) {
+        testLocation(event.getPlayer().getLocation());
+    }
+
+    private void testLocation(Location location) {
+        if (!plugin.getIWM().isIslandEnd(location.getWorld())
+                || !Flags.REMOVE_END_EXIT_ISLAND.isSetForWorld(location.getWorld())
+                || location.getWorld().getBlockAt(0, 255, 0).getType().equals(Material.END_PORTAL)) {
             return;
         }
+
         // Setting a End Portal at the top will trick dragon legacy check.
-        e.getChunk().getBlock(0, 255, 0).setType(Material.END_PORTAL);
+        location.getWorld().getBlockAt(0, 255, 0).setType(Material.END_PORTAL, false);
+    }
+
+    /**
+     * Adds a portal frame at the top of the world, when a player joins an island End world.
+     * This prevents the Ender Dragon from spawning: if any portal frame exists, then the dragon is considered killed already.
+     * @param event PlayerJoinEvent
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onPlayerJoinWorld(PlayerJoinEvent event) {
+        testLocation(event.getPlayer().getLocation());
     }
 
     /**
@@ -46,18 +62,18 @@ public class BlockEndDragon implements Listener {
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onEndBlockPlace(BlockPlaceEvent e) {
-        if (!Flags.REMOVE_END_EXIT_ISLAND.isSetForWorld(e.getBlock().getWorld())
-                || e.getBlock().getY() != 255
-                || e.getBlock().getX() != 0
-                || e.getBlock().getZ() != 0
-                || !e.getBlock().getType().equals(Material.END_PORTAL)
-                || !e.getBlock().getWorld().getEnvironment().equals(Environment.THE_END)
-                || !plugin.getIWM().inWorld(e.getBlock().getWorld())
-                || !plugin.getIWM().isEndGenerate(e.getBlock().getWorld())
-                || !plugin.getIWM().isEndIslands(e.getBlock().getWorld())) {
-            return;
-        }
-        e.setCancelled(true);
+        e.setCancelled(testBlock(e.getBlock()));
+    }
+
+    private boolean testBlock(Block block) {
+        return block.getY() == 255
+                && block.getX() == 0
+                && block.getZ() == 0
+                && block.getWorld().getEnvironment().equals(Environment.THE_END)
+                && Flags.REMOVE_END_EXIT_ISLAND.isSetForWorld(block.getWorld())
+                && plugin.getIWM().inWorld(block.getWorld())
+                && plugin.getIWM().isEndGenerate(block.getWorld())
+                && plugin.getIWM().isEndIslands(block.getWorld());
     }
 
     /**
@@ -67,17 +83,6 @@ public class BlockEndDragon implements Listener {
      */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onEndBlockBreak(BlockBreakEvent e) {
-        if (!Flags.REMOVE_END_EXIT_ISLAND.isSetForWorld(e.getBlock().getWorld())
-                || e.getBlock().getY() != 255
-                || e.getBlock().getX() != 0
-                || e.getBlock().getZ() != 0
-                || !e.getBlock().getType().equals(Material.END_PORTAL)
-                || !e.getBlock().getWorld().getEnvironment().equals(Environment.THE_END)
-                || !plugin.getIWM().inWorld(e.getBlock().getWorld())
-                || !plugin.getIWM().isEndGenerate(e.getBlock().getWorld())
-                || !plugin.getIWM().isEndIslands(e.getBlock().getWorld())) {
-            return;
-        }
-        e.setCancelled(true);
+        e.setCancelled(testBlock(e.getBlock()));
     }
 }

@@ -5,28 +5,45 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
+import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.api.panels.PanelItem;
 import world.bentobox.bentobox.api.panels.PanelItem.ClickHandler;
 
 public class PanelItemBuilder {
     private ItemStack icon = new ItemStack(Material.AIR);
-    private String name = "";
+    private @Nullable String name = "";
     private List<String> description = new ArrayList<>();
     private boolean glow = false;
     private PanelItem.ClickHandler clickHandler;
-    private boolean playerHead;
+    private String playerHeadName;
     private boolean invisible;
 
-    public PanelItemBuilder icon(Material icon) {
-        this.icon = new ItemStack(icon);
+    /**
+     * Allows to define amount of elements in stack.
+     * Note: it uses item.setAmount, so it cannot overwrite minimal and maximal values.
+     * f.e. Eggs will never be more than 16, and 0 will mean empty icon.
+     */
+    private int amount = 1;
+
+    /**
+     * Default icon if someone gives invalid material or item stack.
+     */
+    private static final ItemStack DEFAULT_ICON = new ItemStack(Material.PAPER);
+
+
+    public PanelItemBuilder icon(@Nullable Material icon) {
+        this.icon = icon == null ? DEFAULT_ICON.clone() : new ItemStack(icon);
         return this;
     }
 
-    public PanelItemBuilder icon(ItemStack icon) {
-        this.icon = icon;
+    public PanelItemBuilder icon(@Nullable ItemStack icon) {
+        this.icon = icon == null ? DEFAULT_ICON.clone() : icon;
+        // use icon stack amount.
+        this.amount = this.icon.getAmount();
         return this;
     }
 
@@ -37,14 +54,22 @@ public class PanelItemBuilder {
      */
     public PanelItemBuilder icon(String playerName) {
         this.icon = new ItemStack(Material.PLAYER_HEAD, 1);
-        this.name = playerName;
-        this.playerHead = true;
+        this.playerHeadName = playerName;
         return this;
     }
 
+    public PanelItemBuilder name(@Nullable String name) {
+        this.name = name != null ? ChatColor.translateAlternateColorCodes('&', name) : null;
+        return this;
+    }
 
-    public PanelItemBuilder name(String name) {
-        this.name = name;
+    /**
+     * Sets amount of items in stack.
+     * @param amount new amount of items.
+     * @return PanelItemBuilder
+     */
+    public PanelItemBuilder amount(int amount) {
+        this.amount = amount;
         return this;
     }
 
@@ -54,7 +79,7 @@ public class PanelItemBuilder {
      * @return PanelItemBuilder
      */
     public PanelItemBuilder description(List<String> description) {
-        this.description.addAll(description);
+        description.forEach(this::description);
         return this;
     }
 
@@ -140,8 +165,16 @@ public class PanelItemBuilder {
      * @return the playerHead
      */
     public boolean isPlayerHead() {
-        return playerHead;
+        return playerHeadName != null && !playerHeadName.isEmpty();
     }
+    
+    /**
+     * @return the playerHead
+     * @since 1.9.0
+     */
+    public String getPlayerHeadName() {
+        return playerHeadName;
+    }    
 
     /**
      * @return the invisible
@@ -150,4 +183,13 @@ public class PanelItemBuilder {
         return invisible;
     }
 
+
+    /**
+     * @return amount of items in stack.
+     * @since 1.13.0
+     */
+    public int getAmount()
+    {
+        return this.amount;
+    }
 }

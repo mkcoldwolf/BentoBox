@@ -6,20 +6,41 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang.Validate;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.World.Environment;
+import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
-import org.bukkit.entity.*;
+import org.bukkit.entity.Animals;
+import org.bukkit.entity.Bat;
+import org.bukkit.entity.EnderDragon;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.Flying;
+import org.bukkit.entity.IronGolem;
+import org.bukkit.entity.Monster;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.PufferFish;
+import org.bukkit.entity.Shulker;
+import org.bukkit.entity.Slime;
+import org.bukkit.entity.Snowman;
+import org.bukkit.entity.WaterMob;
+import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
 import org.bukkit.util.Vector;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jdt.annotation.Nullable;
 
+import io.papermc.lib.PaperLib;
+import io.papermc.lib.features.blockstatesnapshot.BlockStateSnapshotResult;
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.user.User;
 
@@ -38,6 +59,9 @@ public class Util {
 
     private Util() {}
 
+    /**
+     * Used for testing only
+     */
     public static void setPlugin(BentoBox p) {
         plugin = p;
     }
@@ -183,15 +207,23 @@ public class Util {
     }
 
     /**
-     * Checks is world = world2 irrespective of the world type
+     * Checks is world = world2 irrespective of the world type. Only strips _nether and _the_end from world name.
      * @param world - world
      * @param world2 - world
      * @return true if the same
      */
     public static boolean sameWorld(World world, World world2) {
-        String worldName = world.getName().replaceAll(NETHER, "").replaceAll(THE_END, "");
-        String world2Name = world2.getName().replaceAll(NETHER, "").replaceAll(THE_END, "");
-        return worldName.equalsIgnoreCase(world2Name);
+        return stripName(world).equals(stripName(world2));
+    }
+
+    private static String stripName(World world) {
+        if (world.getName().endsWith(NETHER)) {
+            return world.getName().substring(0, world.getName().length() - NETHER.length());
+        }
+        if (world.getName().endsWith(THE_END)) {
+            return world.getName().substring(0, world.getName().length() - THE_END.length());
+        }
+        return world.getName();
     }
 
     /**
@@ -199,8 +231,12 @@ public class Util {
      * @param world - world
      * @return over world
      */
-    public static World getWorld(World world) {
-        return world.getEnvironment().equals(Environment.NORMAL) ? world : Bukkit.getWorld(world.getName().replaceAll(NETHER, "").replaceAll(THE_END, ""));
+    @Nullable
+    public static World getWorld(@Nullable World world) {
+        if (world == null) {
+            return null;
+        }
+        return world.getEnvironment().equals(Environment.NORMAL) ? world : Bukkit.getWorld(world.getName().replace(NETHER, "").replace(THE_END, ""));
     }
 
     /**
@@ -310,7 +346,7 @@ public class Util {
         // PufferFish is a unique fix.
 
         return entity instanceof Monster || entity instanceof Flying || entity instanceof Slime ||
-            entity instanceof Shulker || entity instanceof EnderDragon || entity instanceof PufferFish;
+                entity instanceof Shulker || entity instanceof EnderDragon || entity instanceof PufferFish;
     }
 
 
@@ -328,6 +364,290 @@ public class Util {
         // Most of passive mobs extends Animals
 
         return entity instanceof Animals || entity instanceof IronGolem || entity instanceof Snowman ||
-            entity instanceof WaterMob && !(entity instanceof PufferFish) || entity instanceof Bat;
+                entity instanceof WaterMob && !(entity instanceof PufferFish) || entity instanceof Bat;
+    }
+
+    /*
+     * PaperLib methods for addons to call
+     */
+
+    /**
+     * Teleports an Entity to the target location, loading the chunk asynchronously first if needed.
+     * @param entity The Entity to teleport
+     * @param location The Location to Teleport to
+     * @return Future that completes with the result of the teleport
+     */
+    @NonNull
+    public static CompletableFuture<Boolean> teleportAsync(@NonNull Entity entity, @NonNull Location location) {
+        return PaperLib.teleportAsync(entity, location);
+    }
+
+    /**
+     * Teleports an Entity to the target location, loading the chunk asynchronously first if needed.
+     * @param entity The Entity to teleport
+     * @param location The Location to Teleport to
+     * @param cause The cause for the teleportation
+     * @return Future that completes with the result of the teleport
+     */
+    @NonNull
+    public static CompletableFuture<Boolean> teleportAsync(@NonNull Entity entity, @NonNull Location location, TeleportCause cause) {
+        return PaperLib.teleportAsync(entity, location, cause);
+    }
+
+    /**
+     * Gets the chunk at the target location, loading it asynchronously if needed.
+     * @param loc Location to get chunk for
+     * @return Future that completes with the chunk
+     */
+    @NonNull
+    public static CompletableFuture<Chunk> getChunkAtAsync(@NonNull Location loc) {
+        return getChunkAtAsync(loc.getWorld(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4, true);
+    }
+
+    /**
+     * Gets the chunk at the target location, loading it asynchronously if needed.
+     * @param loc Location to get chunk for
+     * @param gen Should the chunk generate or not. Only respected on some MC versions, 1.13 for CB, 1.12 for Paper
+     * @return Future that completes with the chunk, or null if the chunk did not exists and generation was not requested.
+     */
+    @NonNull
+    public static CompletableFuture<Chunk> getChunkAtAsync(@NonNull Location loc, boolean gen) {
+        return getChunkAtAsync(loc.getWorld(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4, gen);
+    }
+
+    /**
+     * Gets the chunk at the target location, loading it asynchronously if needed.
+     * @param world World to load chunk for
+     * @param x X coordinate of the chunk to load
+     * @param z Z coordinate of the chunk to load
+     * @return Future that completes with the chunk
+     */
+    @NonNull
+    public static CompletableFuture<Chunk> getChunkAtAsync(@NonNull World world, int x, int z) {
+        return getChunkAtAsync(world, x, z, true);
+    }
+
+    /**
+     * Gets the chunk at the target location, loading it asynchronously if needed.
+     * @param world World to load chunk for
+     * @param x X coordinate of the chunk to load
+     * @param z Z coordinate of the chunk to load
+     * @param gen Should the chunk generate or not. Only respected on some MC versions, 1.13 for CB, 1.12 for Paper
+     * @return Future that completes with the chunk, or null if the chunk did not exists and generation was not requested.
+     */
+    @NonNull
+    public static CompletableFuture<Chunk> getChunkAtAsync(@NonNull World world, int x, int z, boolean gen) {
+        return PaperLib.getChunkAtAsync(world, x, z, gen);
+    }
+
+    /**
+     * Checks if the chunk has been generated or not. Only works on Paper 1.12+ or any 1.13.1+ version
+     * @param loc Location to check if the chunk is generated
+     * @return If the chunk is generated or not
+     */
+    public static boolean isChunkGenerated(@NonNull Location loc) {
+        return isChunkGenerated(loc.getWorld(), loc.getBlockX() >> 4, loc.getBlockZ() >> 4);
+    }
+
+    /**
+     * Checks if the chunk has been generated or not. Only works on Paper 1.12+ or any 1.13.1+ version
+     * @param world World to check for
+     * @param x X coordinate of the chunk to check
+     * @param z Z coordinate of the chunk to checl
+     * @return If the chunk is generated or not
+     */
+    public static boolean isChunkGenerated(@NonNull World world, int x, int z) {
+        return PaperLib.isChunkGenerated(world, x, z);
+    }
+
+    /**
+     * Get's a BlockState, optionally not using a snapshot
+     * @param block The block to get a State of
+     * @param useSnapshot Whether or not to use a snapshot when supported
+     * @return The BlockState
+     */
+    @NonNull
+    public static BlockStateSnapshotResult getBlockState(@NonNull Block block, boolean useSnapshot) {
+        return PaperLib.getBlockState(block, useSnapshot);
+    }
+
+    /**
+     * Detects if the current MC version is at least the following version.
+     *
+     * Assumes 0 patch version.
+     *
+     * @param minor Min Minor Version
+     * @return Meets the version requested
+     */
+    public static boolean isVersion(int minor) {
+        return PaperLib.isVersion(minor);
+    }
+
+    /**
+     * Detects if the current MC version is at least the following version.
+     * @param minor Min Minor Version
+     * @param patch Min Patch Version
+     * @return Meets the version requested
+     */
+    public static boolean isVersion(int minor, int patch) {
+        return PaperLib.isVersion(minor, patch);
+    }
+
+    /**
+     * Gets the current Minecraft Minor version. IE: 1.13.1 returns 13
+     * @return The Minor Version
+     */
+    public static int getMinecraftVersion() {
+        return PaperLib.getMinecraftVersion();
+    }
+
+    /**
+     * Gets the current Minecraft Patch version. IE: 1.13.1 returns 1
+     * @return The Patch Version
+     */
+    public static int getMinecraftPatchVersion() {
+        return PaperLib.getMinecraftPatchVersion();
+    }
+
+    /**
+     * Check if the server has access to the Spigot API
+     * @return True for Spigot <em>and</em> Paper environments
+     */
+    public static boolean isSpigot() {
+        return PaperLib.isSpigot();
+    }
+
+    /**
+     * Check if the server has access to the Paper API
+     * @return True for Paper environments
+     */
+    public static boolean isPaper() {
+        return !isJUnitTest() && PaperLib.isPaper();
+    }
+
+    /**
+     * I don't like doing this, but otherwise we need to set a flag in every test
+     */
+    private static boolean isJUnitTest() {
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
+        for (StackTraceElement element : stackTrace) {
+            if (element.getClassName().startsWith("org.junit.")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Strips spaces immediately after color codes. Used by {@link User#getTranslation(String, String...)}.
+     * @param textToStrip - text to strip
+     * @return text with spaces after color codes removed
+     * @since 1.9.0
+     */
+    @NonNull
+    public static String stripSpaceAfterColorCodes(@NonNull String textToStrip) {
+        Validate.notNull(textToStrip, "Cannot strip null text");
+        textToStrip = textToStrip.replaceAll("(" + ChatColor.COLOR_CHAR + ".)[\\s]", "$1");
+        return textToStrip;
+    }
+
+    /**
+     * Returns whether the input is an integer or not.
+     * @param nbr the input.
+     * @param parse whether the input should be checked to ensure it can be parsed as an Integer without throwing an exception.
+     * @return {@code true} if the input is an integer, {@code false} otherwise.
+     * @since 1.10.0
+     */
+    public static boolean isInteger(@NonNull String nbr, boolean parse) {
+        // Original code from Jonas Klemming on StackOverflow (https://stackoverflow.com/q/237159).
+        // I slightly refined it to catch more edge cases.
+        // It is a faster alternative to catch malformed strings than the NumberFormatException.
+        int length = nbr.length();
+        if (length == 0) {
+            return false;
+        }
+        int i = 0;
+        if (nbr.charAt(0) == '-' || nbr.charAt(0) == '+') {
+            if (length == 1) {
+                return false;
+            }
+            i = 1;
+        }
+        boolean trailingDot = false;
+        for (; i < length; i++) {
+            char c = nbr.charAt(i);
+            if (trailingDot && c != '0') {
+                // We only accept 0's after a trailing dot.
+                return false;
+            }
+            if (c == '.') {
+                if (i == length - 1) {
+                    // We're at the end of the integer, so it's okay
+                    return true;
+                } else {
+                    // we will need to make sure there is nothing else but 0's after the dot.
+                    trailingDot = true;
+                }
+            } else if (!trailingDot && (c < '0' || c > '9')) {
+                return false;
+            }
+        }
+
+        // these tests above should have caught most likely issues
+        // We now need to make sure parsing the input as an Integer won't cause issues
+        if (parse) {
+            try {
+                Integer.parseInt(nbr); // NOSONAR we don't care about the result of this operation
+                return true;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+
+        // Everything's green!
+        return true;
+    }
+
+    /**
+     * Get a UUID from a string. The string can be a known player's name or a UUID
+     * @param nameOrUUID - name or UUID
+     * @return UUID or null if unknown
+     * @since 1.13.0
+     */
+    @Nullable
+    public static UUID getUUID(@NonNull String nameOrUUID) {
+        UUID targetUUID = plugin.getPlayers().getUUID(nameOrUUID);
+        if (targetUUID != null) return targetUUID;
+        // Check if UUID is being used
+        try {
+            return UUID.fromString(nameOrUUID);
+        } catch (Exception e) {
+            // Do nothing
+        }
+        return null;
+    }
+
+    /**
+     * Run a list of commands for a user
+     * @param user - user affected by the commands
+     * @param commands - a list of commands
+     * @param commandType - the type of command being run - used in the console error message
+     */
+    public static void runCommands(User user, @NonNull List<String> commands, String commandType) {
+        commands.forEach(command -> {
+            command = command.replace("[player]", user.getName());
+            if (command.startsWith("[SUDO]")) {
+                // Execute the command by the player
+                if (!user.isOnline() || !user.performCommand(command.substring(6))) {
+                    plugin.logError("Could not execute " + commandType + " command for " + user.getName() + ": " + command.substring(6));
+                }
+            } else {
+                // Otherwise execute as the server console
+                if (!Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command)) {
+                    plugin.logError("Could not execute " + commandType + " command as console: " + command);
+                }
+            }
+        });
+        
     }
 }

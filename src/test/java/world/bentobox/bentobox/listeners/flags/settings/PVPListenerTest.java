@@ -1,13 +1,15 @@
-/**
- *
- */
 package world.bentobox.bentobox.listeners.flags.settings;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -21,10 +23,14 @@ import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.AreaEffectCloud;
+import org.bukkit.entity.Arrow;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Firework;
 import org.bukkit.entity.FishHook;
 import org.bukkit.entity.LingeringPotion;
 import org.bukkit.entity.LivingEntity;
@@ -36,17 +42,22 @@ import org.bukkit.entity.Zombie;
 import org.bukkit.event.entity.AreaEffectCloudApplyEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
 import org.bukkit.event.entity.EntityDamageEvent.DamageModifier;
+import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.entity.LingeringPotionSplashEvent;
 import org.bukkit.event.entity.PotionSplashEvent;
 import org.bukkit.event.player.PlayerFishEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.projectiles.BlockProjectileSource;
 import org.bukkit.projectiles.ProjectileSource;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
@@ -60,6 +71,7 @@ import com.google.common.collect.ImmutableMap;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.Settings;
+import world.bentobox.bentobox.api.addons.GameModeAddon;
 import world.bentobox.bentobox.api.configuration.WorldSettings;
 import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.api.panels.Panel;
@@ -72,6 +84,7 @@ import world.bentobox.bentobox.managers.FlagsManager;
 import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
+import world.bentobox.bentobox.managers.PlaceholdersManager;
 import world.bentobox.bentobox.util.Util;
 
 /**
@@ -83,15 +96,25 @@ import world.bentobox.bentobox.util.Util;
 @PrepareForTest({BentoBox.class, Util.class, Bukkit.class })
 public class PVPListenerTest {
 
+    @Mock
     private IslandWorldManager iwm;
+    @Mock
     private IslandsManager im;
+    @Mock
     private Island island;
+    @Mock
     private Player player;
+    @Mock
     private Player player2;
+    @Mock
     private Location loc;
+    @Mock
     private Zombie zombie;
+    @Mock
     private Creeper creeper;
+    @Mock
     private World world;
+    @Mock
     private Notifier notifier;
 
     /**
@@ -105,34 +128,33 @@ public class PVPListenerTest {
         // Make sure you set the plung for the User class otherwise it'll use an old object
         User.setPlugin(plugin);
         // Island World Manager
-        iwm = mock(IslandWorldManager.class);
         when(iwm.inWorld(any(World.class))).thenReturn(true);
         when(iwm.inWorld(any(Location.class))).thenReturn(true);
-        when(iwm.getPermissionPrefix(Mockito.any())).thenReturn("bskyblock");
+        when(iwm.getPermissionPrefix(Mockito.any())).thenReturn("bskyblock.");
         // No visitor protection right now
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(new ArrayList<>());
+        when(iwm.getIvSettings(any())).thenReturn(new ArrayList<>());
         when(plugin.getIWM()).thenReturn(iwm);
 
         Panel panel = mock(Panel.class);
         when(panel.getInventory()).thenReturn(mock(Inventory.class));
 
-        // Sometimes use Mockito.withSettings().verboseLogging()
-        player = mock(Player.class);
-        UUID uuid = UUID.randomUUID();
-        when(player.getUniqueId()).thenReturn(uuid);
 
-        world = mock(World.class);
+        // World
         when(world.getEnvironment()).thenReturn(World.Environment.NORMAL);
-        when(player.getWorld()).thenReturn(world);
 
-        loc = mock(Location.class);
+        // Location
         when(loc.getWorld()).thenReturn(world);
 
+        // Sometimes use Mockito.withSettings().verboseLogging()
+        // Player
+        UUID uuid = UUID.randomUUID();
+        when(player.getUniqueId()).thenReturn(uuid);
         when(player.getLocation()).thenReturn(loc);
+        when(player.getWorld()).thenReturn(world);
         User.getInstance(player);
 
         // Sometimes use Mockito.withSettings().verboseLogging()
-        player2 = mock(Player.class);
+        // Player 2
         UUID uuid2 = UUID.randomUUID();
         when(player2.getUniqueId()).thenReturn(uuid2);
 
@@ -140,26 +162,28 @@ public class PVPListenerTest {
         when(player2.getLocation()).thenReturn(loc);
         User.getInstance(player2);
 
+        // Util
         PowerMockito.mockStatic(Util.class);
-        when(Util.getWorld(Mockito.any())).thenReturn(mock(World.class));
+        when(Util.getWorld(any())).thenReturn(mock(World.class));
 
+        // Flags Manager
         FlagsManager fm = mock(FlagsManager.class);
         Flag flag = mock(Flag.class);
-        when(flag.isSetForWorld(Mockito.any())).thenReturn(false);
+        when(flag.isSetForWorld(any())).thenReturn(false);
         PanelItem item = mock(PanelItem.class);
         when(item.getItem()).thenReturn(mock(ItemStack.class));
-        when(flag.toPanelItem(Mockito.any(), Mockito.any(), Mockito.eq(false))).thenReturn(item);
+        when(flag.toPanelItem(any(), any(), any(), eq(false))).thenReturn(item);
         when(fm.getFlag(Mockito.anyString())).thenReturn(Optional.of(flag));
         when(plugin.getFlagsManager()).thenReturn(fm);
 
-        im = mock(IslandsManager.class);
+        // Island Manager
         // Default is that player in on their island
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(true);
+        when(im.userIsOnIsland(any(), any())).thenReturn(true);
         island = mock(Island.class);
-        when(im.getIslandAt(Mockito.any())).thenReturn(Optional.of(island));
-        when(im.getProtectedIslandAt(Mockito.any())).thenReturn(Optional.of(island));
+        when(im.getIslandAt(any())).thenReturn(Optional.of(island));
+        when(im.getProtectedIslandAt(any())).thenReturn(Optional.of(island));
         // All flags are disallowed by default.
-        when(island.isAllowed(Mockito.any())).thenReturn(false);
+        when(island.isAllowed(any())).thenReturn(false);
         when(plugin.getIslands()).thenReturn(im);
 
         // Settings
@@ -169,15 +193,21 @@ public class PVPListenerTest {
         // Locales - this returns the string that was requested for translation
         LocalesManager lm = mock(LocalesManager.class);
         when(plugin.getLocalesManager()).thenReturn(lm);
-        when(lm.get(any(), any())).thenAnswer((Answer<String>) invocation -> invocation.getArgumentAt(1, String.class));
+        Answer<String> answer = (Answer<String>) invocation -> invocation.getArgument(1, String.class);
+        when(lm.get(any(), any())).thenAnswer(answer);
+
+        // Placeholders
+        PlaceholdersManager placeholdersManager = mock(PlaceholdersManager.class);
+        when(plugin.getPlaceholdersManager()).thenReturn(placeholdersManager);
+        when(placeholdersManager.replacePlaceholders(any(), any())).thenAnswer(answer);
 
         // Create some entities
-        zombie = mock(Zombie.class);
         when(zombie.getWorld()).thenReturn(world);
         when(zombie.getUniqueId()).thenReturn(UUID.randomUUID());
-        creeper = mock(Creeper.class);
+        when(zombie.getType()).thenReturn(EntityType.ZOMBIE);
         when(creeper.getWorld()).thenReturn(world);
         when(creeper.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(creeper.getType()).thenReturn(EntityType.CREEPER);
 
         // Scheduler
         BukkitScheduler sch = mock(BukkitScheduler.class);
@@ -186,17 +216,28 @@ public class PVPListenerTest {
 
         // World Settings
         WorldSettings ws = mock(WorldSettings.class);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
         Map<String, Boolean> worldFlags = new HashMap<>();
         when(ws.getWorldFlags()).thenReturn(worldFlags);
+        GameModeAddon gma = mock(GameModeAddon.class);
+        Optional<GameModeAddon> opGma = Optional.of(gma );
+        when(iwm.getAddon(any())).thenReturn(opGma);
 
         // Notifier
-        notifier = mock(Notifier.class);
         when(plugin.getNotifier()).thenReturn(notifier);
 
         // Addon
-        when(iwm.getAddon(Mockito.any())).thenReturn(Optional.empty());
+        when(iwm.getAddon(any())).thenReturn(Optional.empty());
 
+        // Util strip spaces
+        when(Util.stripSpaceAfterColorCodes(anyString())).thenCallRealMethod();
+
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     private void wrongWorld() {
@@ -292,8 +333,7 @@ public class PVPListenerTest {
         e = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
                 new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
-        when(iwm.inWorld(any(World.class))).thenReturn(false);
-        when(iwm.inWorld(any(Location.class))).thenReturn(false);
+        wrongWorld();
         new PVPListener().onEntityDamage(e);
         assertFalse(e.isCancelled());
     }
@@ -303,6 +343,28 @@ public class PVPListenerTest {
      */
     @Test
     public void testOnEntityDamageOnVisitorByZombieVisitorProtected() {
+        Entity damager = mock(Zombie.class);
+        Entity damagee = mock(Player.class);
+        when(damager.getWorld()).thenReturn(world);
+        when(damagee.getWorld()).thenReturn(world);
+
+        // Protect visitors
+        when(iwm.getIvSettings(world)).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        // This player is a visitor
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+
+        EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
+                new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
+                new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
+        new PVPListener().onEntityDamage(e);
+        assertTrue(e.isCancelled());
+    }
+
+    /**
+     * Test method for {@link PVPListener#onEntityDamage(org.bukkit.event.entity.EntityDamageByEntityEvent)}.
+     */
+    @Test
+    public void testOnEntityDamageOnVisitorByZombieVisitorProtectedWrongWorld() {
         Entity damager = mock(Zombie.class);
         Entity damagee = mock(Player.class);
         World world = mock(World.class);
@@ -315,19 +377,12 @@ public class PVPListenerTest {
         visitorProtectionList.add("ENTITY_ATTACK");
         when(iwm.getIvSettings(world)).thenReturn(visitorProtectionList);
         // This player is a visitor
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
 
-        EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
+        EntityDamageByEntityEvent e  = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
                 new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
-        new PVPListener().onEntityDamage(e);
-        assertTrue(e.isCancelled());
-        // Wrong world
-        e = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
-                new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
-                new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
-        when(iwm.inWorld(any(World.class))).thenReturn(false);
-        when(iwm.inWorld(any(Location.class))).thenReturn(false);
+        wrongWorld();
         new PVPListener().onEntityDamage(e);
         assertFalse(e.isCancelled());
     }
@@ -349,7 +404,7 @@ public class PVPListenerTest {
         visitorProtectionList.add("ENTITY_ATTACK");
         when(iwm.getIvSettings(world)).thenReturn(visitorProtectionList);
         // This player is a visitor
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
         // Damage is not entity attack
         EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.THORNS,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
@@ -375,7 +430,7 @@ public class PVPListenerTest {
         when(damagee.getWorld()).thenReturn(world);
 
         // This player is a visitor
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
 
         EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(damager, damagee, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
@@ -414,7 +469,7 @@ public class PVPListenerTest {
         new PVPListener().onEntityDamage(e);
         // PVP should be banned
         assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
 
     }
 
@@ -429,12 +484,12 @@ public class PVPListenerTest {
 
         // Enable visitor protection
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onEntityDamage(e);
         // visitor should be protected
         assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
     }
 
     /**
@@ -443,23 +498,23 @@ public class PVPListenerTest {
     @Test
     public void testOnEntityDamageOnPVPAllowed() {
         // PVP is allowed
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
         EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(player, player2, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
                 new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
         new PVPListener().onEntityDamage(e);
         // PVP should be allowed
         assertFalse(e.isCancelled());
-        Mockito.verify(player, Mockito.never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
 
         // Enable visitor protection
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onEntityDamage(e);
         // visitor should be protected
         assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
 
     }
 
@@ -471,23 +526,24 @@ public class PVPListenerTest {
         Projectile p = mock(Projectile.class);
         when(p.getShooter()).thenReturn(player);
         when(p.getLocation()).thenReturn(loc);
+        when(p.getWorld()).thenReturn(world);
         EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(p, player2, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
                 new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
         new PVPListener().onEntityDamage(e);
         // PVP should be banned
         assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
 
         // Visitor protection
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onEntityDamage(e);
         // visitor should be protected
         assertTrue(e.isCancelled());
         // PVP trumps visitor protection
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
 
     }
 
@@ -516,24 +572,63 @@ public class PVPListenerTest {
         when(p.getShooter()).thenReturn(player);
         when(p.getLocation()).thenReturn(loc);
         // PVP is allowed
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
         EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(p, player2, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
                 new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
                 new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
         new PVPListener().onEntityDamage(e);
         // PVP should be allowed
         assertFalse(e.isCancelled());
-        Mockito.verify(player, Mockito.never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
 
         // Enable visitor protection
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onEntityDamage(e);
         // visitor should be protected
         assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
 
+    }
+
+    /**
+     * Test method for {@link PVPListener#onEntityDamage(org.bukkit.event.entity.EntityDamageByEntityEvent)}.
+     */
+    @Test
+    public void testOnEntityDamagePVPAllowedProjectileNullSource() {
+        Projectile p = mock(Projectile.class);
+        when(p.getShooter()).thenReturn(null);
+        when(p.getLocation()).thenReturn(loc);
+        // PVP is allowed
+        when(island.isAllowed(any())).thenReturn(true);
+        EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(p, player2, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
+                new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
+                new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
+        new PVPListener().onEntityDamage(e);
+        // PVP should be allowed
+        assertFalse(e.isCancelled());
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
+    }
+
+    /**
+     * Test method for {@link PVPListener#onEntityDamage(org.bukkit.event.entity.EntityDamageByEntityEvent)}.
+     */
+    @Test
+    public void testOnEntityDamagePVPAllowedProjectileNonEntitySource() {
+        Projectile p = mock(Projectile.class);
+        BlockProjectileSource pSource = mock(BlockProjectileSource.class);
+        when(p.getShooter()).thenReturn(pSource);
+        when(p.getLocation()).thenReturn(loc);
+        // PVP is allowed
+        when(island.isAllowed(any())).thenReturn(true);
+        EntityDamageByEntityEvent e = new EntityDamageByEntityEvent(p, player2, EntityDamageEvent.DamageCause.ENTITY_ATTACK,
+                new EnumMap<>(ImmutableMap.of(DamageModifier.BASE, 0D)),
+                new EnumMap<DamageModifier, Function<? super Double, Double>>(ImmutableMap.of(DamageModifier.BASE, Functions.constant(-0.0))));
+        new PVPListener().onEntityDamage(e);
+        // PVP should be allowed
+        assertFalse(e.isCancelled());
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
     }
 
     /**
@@ -555,9 +650,9 @@ public class PVPListenerTest {
 
         // PVP should be banned
         assertTrue(pfe.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
         // Hook should be removed
-        Mockito.verify(hook).remove();
+        verify(hook).remove();
 
         // Wrong world
         wrongWorld();
@@ -570,7 +665,7 @@ public class PVPListenerTest {
         when(iwm.inWorld(any(Location.class))).thenReturn(true);
 
         // Allow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
         pfe = new PlayerFishEvent(player, player2, hook, null);
         new PVPListener().onFishing(pfe);
         assertFalse(pfe.isCancelled());
@@ -593,16 +688,16 @@ public class PVPListenerTest {
         PlayerFishEvent pfe = new PlayerFishEvent(player, player2, hook, null);
 
         // Allow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
 
         // Protect visitors
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onFishing(pfe);
         // visitor should be protected
         assertTrue(pfe.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
     }
 
     /**
@@ -615,7 +710,7 @@ public class PVPListenerTest {
         // Catch a player
         PlayerFishEvent pfe = new PlayerFishEvent(player, player, hook, null);
         assertFalse(pfe.isCancelled());
-        Mockito.verify(player, Mockito.never()).sendMessage(Mockito.anyString());
+        verify(player, never()).sendMessage(Mockito.anyString());
     }
 
     /**
@@ -629,16 +724,16 @@ public class PVPListenerTest {
         PlayerFishEvent pfe = new PlayerFishEvent(player, player2, hook, null);
 
         // Disallow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(false);
+        when(island.isAllowed(any())).thenReturn(false);
 
         // Protect visitors
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onFishing(pfe);
         // visitor should be protected
         assertTrue(pfe.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
     }
 
     /**
@@ -677,7 +772,7 @@ public class PVPListenerTest {
     @Test
     public void testOnSplashPotionSplash() {
         // Disallow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(false);
+        when(island.isAllowed(any())).thenReturn(false);
 
         ThrownPotion tp = mock(ThrownPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -689,8 +784,10 @@ public class PVPListenerTest {
         map.put(creeper, 10D);
         PotionSplashEvent e = new PotionSplashEvent(tp, map);
         new PVPListener().onSplashPotionSplash(e);
-        assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        assertFalse(e.getAffectedEntities().contains(player2));
+        assertTrue(e.getAffectedEntities().contains(zombie));
+        assertTrue(e.getAffectedEntities().contains(creeper));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
 
         // Wrong world
         wrongWorld();
@@ -705,7 +802,7 @@ public class PVPListenerTest {
     @Test
     public void testOnSplashPotionSplashSelfInflicted() {
         // Disallow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(false);
+        when(island.isAllowed(any())).thenReturn(false);
 
         ThrownPotion tp = mock(ThrownPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -732,7 +829,7 @@ public class PVPListenerTest {
     @Test
     public void testOnSplashPotionSplashAllowPVP() {
         // Disallow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
 
         ThrownPotion tp = mock(ThrownPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -744,8 +841,10 @@ public class PVPListenerTest {
         map.put(creeper, 10D);
         PotionSplashEvent e = new PotionSplashEvent(tp, map);
         new PVPListener().onSplashPotionSplash(e);
-        assertFalse(e.isCancelled());
-        Mockito.verify(player, Mockito.never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
+        assertTrue(e.getAffectedEntities().contains(player2));
+        assertTrue(e.getAffectedEntities().contains(zombie));
+        assertTrue(e.getAffectedEntities().contains(creeper));
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
     }
 
 
@@ -755,7 +854,7 @@ public class PVPListenerTest {
     @Test
     public void testOnSplashPotionSplashAllowPVPProtectVisitors() {
         // Allow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
 
         ThrownPotion tp = mock(ThrownPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -768,12 +867,14 @@ public class PVPListenerTest {
         PotionSplashEvent e = new PotionSplashEvent(tp, map);
         // Protect visitors
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
         new PVPListener().onSplashPotionSplash(e);
         // visitor should be protected
-        assertTrue(e.isCancelled());
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        assertFalse(e.getAffectedEntities().contains(player2));
+        assertTrue(e.getAffectedEntities().contains(zombie));
+        assertTrue(e.getAffectedEntities().contains(creeper));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
 
         // Wrong world
         wrongWorld();
@@ -794,10 +895,11 @@ public class PVPListenerTest {
         LingeringPotionSplashEvent e = new LingeringPotionSplashEvent(tp, cloud);
         new PVPListener().onLingeringPotionSplash(e);
         // Verify
-        Mockito.verify(player, Mockito.times(3)).getUniqueId();
-        Mockito.verify(cloud).getEntityId();
-        Mockito.verify(tp, Mockito.times(2)).getShooter();
+        verify(player, times(3)).getUniqueId();
+        verify(cloud).getEntityId();
+        verify(tp, times(2)).getShooter();
         PowerMockito.verifyStatic(Bukkit.class);
+        Bukkit.getScheduler();
     }
 
     /**
@@ -812,9 +914,10 @@ public class PVPListenerTest {
         LingeringPotionSplashEvent e = new LingeringPotionSplashEvent(tp, cloud);
         new PVPListener().onLingeringPotionSplash(e);
         // Verify
-        Mockito.verify(cloud, Mockito.never()).getEntityId();
-        Mockito.verify(tp).getShooter();
-        PowerMockito.verifyStatic(Bukkit.class, Mockito.never());
+        verify(cloud, never()).getEntityId();
+        verify(tp).getShooter();
+        PowerMockito.verifyStatic(Bukkit.class, never());
+        Bukkit.getScheduler();
     }
 
     /**
@@ -823,7 +926,7 @@ public class PVPListenerTest {
     @Test
     public void testOnLingeringPotionDamageNoPVP() {
         // Disallow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(false);
+        when(island.isAllowed(any())).thenReturn(false);
         // Throw a potion
         LingeringPotion tp = mock(LingeringPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -843,14 +946,14 @@ public class PVPListenerTest {
         listener.onLingeringPotionDamage(ae);
         assertEquals(3, ae.getAffectedEntities().size());
         assertFalse(ae.getAffectedEntities().contains(player2));
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
         // Wrong world
         wrongWorld();
         listener.onLingeringPotionSplash(e);
         // No change to results
         assertEquals(3, ae.getAffectedEntities().size());
         assertFalse(ae.getAffectedEntities().contains(player2));
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.PVP_OVERWORLD.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.PVP_OVERWORLD.getHintReference()));
     }
 
     /**
@@ -859,7 +962,7 @@ public class PVPListenerTest {
     @Test
     public void testOnLingeringPotionDamagePVP() {
         // Allow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
         // Throw a potion
         LingeringPotion tp = mock(LingeringPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -878,12 +981,12 @@ public class PVPListenerTest {
         AreaEffectCloudApplyEvent ae = new AreaEffectCloudApplyEvent(cloud, list);
         listener.onLingeringPotionDamage(ae);
         assertEquals(4, ae.getAffectedEntities().size());
-        Mockito.verify(player, Mockito.never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
         // Wrong world
         wrongWorld();
         listener.onLingeringPotionSplash(e);
         assertEquals(4, ae.getAffectedEntities().size());
-        Mockito.verify(player, Mockito.never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
+        verify(player, never()).sendMessage(Flags.PVP_OVERWORLD.getHintReference());
     }
 
 
@@ -893,7 +996,7 @@ public class PVPListenerTest {
     @Test
     public void testOnLingeringPotionDamageNoPVPVisitor() {
         // Disallow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(false);
+        when(island.isAllowed(any())).thenReturn(false);
         // Throw a potion
         LingeringPotion tp = mock(LingeringPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -910,21 +1013,21 @@ public class PVPListenerTest {
         list.add(zombie);
         // Protect visitor
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
 
         // See who it affects
         AreaEffectCloudApplyEvent ae = new AreaEffectCloudApplyEvent(cloud, list);
         listener.onLingeringPotionDamage(ae);
         assertEquals(3, ae.getAffectedEntities().size());
         assertFalse(ae.getAffectedEntities().contains(player2));
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
         // Wrong world
         wrongWorld();
         listener.onLingeringPotionSplash(e);
         assertEquals(3, ae.getAffectedEntities().size());
         assertFalse(ae.getAffectedEntities().contains(player2));
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
     }
 
     /**
@@ -933,7 +1036,7 @@ public class PVPListenerTest {
     @Test
     public void testOnLingeringPotionDamagePVPVisitor() {
         // Allow PVP
-        when(island.isAllowed(Mockito.any())).thenReturn(true);
+        when(island.isAllowed(any())).thenReturn(true);
         // Throw a potion
         LingeringPotion tp = mock(LingeringPotion.class);
         when(tp.getShooter()).thenReturn(player);
@@ -950,20 +1053,119 @@ public class PVPListenerTest {
         list.add(zombie);
         // Protect visitor
         // This player is a visitor and any damage is not allowed
-        when(im.userIsOnIsland(Mockito.any(), Mockito.any())).thenReturn(false);
-        when(iwm.getIvSettings(Mockito.any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
+        when(im.userIsOnIsland(any(), any())).thenReturn(false);
+        when(iwm.getIvSettings(any())).thenReturn(Collections.singletonList("ENTITY_ATTACK"));
 
         // See who it affects
         AreaEffectCloudApplyEvent ae = new AreaEffectCloudApplyEvent(cloud, list);
         listener.onLingeringPotionDamage(ae);
         assertEquals(3, ae.getAffectedEntities().size());
         assertFalse(ae.getAffectedEntities().contains(player2));
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
         // Wrong world
         wrongWorld();
         listener.onLingeringPotionSplash(e);
         assertEquals(3, ae.getAffectedEntities().size());
         assertFalse(ae.getAffectedEntities().contains(player2));
-        Mockito.verify(notifier).notify(Mockito.any(), Mockito.eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
+        verify(notifier).notify(any(), eq(Flags.INVINCIBLE_VISITORS.getHintReference()));
     }
+
+    /**
+     * Test method for {@link PVPListener#onPlayerShootFireworkEvent(org.bukkit.event.entity.EntityShootBowEvent)}.
+     */
+    @Test
+    public void testOnPlayerShootFireworkEventNotPlayer() {
+        PVPListener listener = new PVPListener();
+        ItemStack bow = new ItemStack(Material.CROSSBOW);
+        Firework firework = mock(Firework.class);
+        when(firework.getEntityId()).thenReturn(123);
+        EntityShootBowEvent e = new EntityShootBowEvent(creeper, bow, firework, 0);
+        listener.onPlayerShootFireworkEvent(e);
+
+        // Now damage
+        EntityDamageByEntityEvent en = new EntityDamageByEntityEvent(firework, player, DamageCause.ENTITY_ATTACK, 0);
+        listener.onEntityDamage(en);
+        assertFalse(en.isCancelled());
+    }
+
+    /**
+     * Test method for {@link PVPListener#onPlayerShootFireworkEvent(org.bukkit.event.entity.EntityShootBowEvent)}.
+     */
+    @Test
+    public void testOnPlayerShootFireworkEventNotFirework() {
+        PVPListener listener = new PVPListener();
+        ItemStack bow = new ItemStack(Material.CROSSBOW);
+        Arrow arrow = mock(Arrow.class);
+        EntityShootBowEvent e = new EntityShootBowEvent(creeper, bow, arrow, 0);
+        listener.onPlayerShootFireworkEvent(e);
+        // Now damage
+        EntityDamageByEntityEvent en = new EntityDamageByEntityEvent(arrow, player, DamageCause.ENTITY_ATTACK, 0);
+        listener.onEntityDamage(en);
+        assertFalse(en.isCancelled());
+    }
+
+    /**
+     * Test method for {@link PVPListener#onPlayerShootFireworkEvent(org.bukkit.event.entity.EntityShootBowEvent)}.
+     */
+    @Test
+    public void testOnPlayerShootFireworkEventNoPVPSelfDamage() {
+        // Disallow PVP
+        when(island.isAllowed(any())).thenReturn(false);
+        PVPListener listener = new PVPListener();
+        ItemStack bow = new ItemStack(Material.CROSSBOW);
+        Firework firework = mock(Firework.class);
+        when(firework.getEntityId()).thenReturn(123);
+        when(firework.getLocation()).thenReturn(loc);
+        EntityShootBowEvent e = new EntityShootBowEvent(player, bow, firework, 0);
+        listener.onPlayerShootFireworkEvent(e);
+
+        // Now damage
+        EntityDamageByEntityEvent en = new EntityDamageByEntityEvent(firework, player, DamageCause.ENTITY_EXPLOSION, 0);
+        listener.onEntityDamage(en);
+        assertFalse(en.isCancelled());
+    }
+
+    /**
+     * Test method for {@link PVPListener#onPlayerShootFireworkEvent(org.bukkit.event.entity.EntityShootBowEvent)}.
+     */
+    @Test
+    public void testOnPlayerShootFireworkEventNoPVP() {
+        // Disallow PVP
+        when(island.isAllowed(any())).thenReturn(false);
+        PVPListener listener = new PVPListener();
+        ItemStack bow = new ItemStack(Material.CROSSBOW);
+        Firework firework = mock(Firework.class);
+        when(firework.getEntityId()).thenReturn(123);
+        when(firework.getLocation()).thenReturn(loc);
+        when(firework.getWorld()).thenReturn(world);
+        EntityShootBowEvent e = new EntityShootBowEvent(player, bow, firework, 0);
+        listener.onPlayerShootFireworkEvent(e);
+
+        // Now damage
+        EntityDamageByEntityEvent en = new EntityDamageByEntityEvent(firework, player2, DamageCause.ENTITY_EXPLOSION, 0);
+        listener.onEntityDamage(en);
+        assertTrue(en.isCancelled());
+    }
+
+    /**
+     * Test method for {@link PVPListener#onPlayerShootFireworkEvent(org.bukkit.event.entity.EntityShootBowEvent)}.
+     */
+    @Test
+    public void testOnPlayerShootFireworkEventPVPAllowed() {
+        // Allow PVP
+        when(island.isAllowed(any())).thenReturn(true);
+        PVPListener listener = new PVPListener();
+        ItemStack bow = new ItemStack(Material.CROSSBOW);
+        Firework firework = mock(Firework.class);
+        when(firework.getEntityId()).thenReturn(123);
+        when(firework.getLocation()).thenReturn(loc);
+        EntityShootBowEvent e = new EntityShootBowEvent(player, bow, firework, 0);
+        listener.onPlayerShootFireworkEvent(e);
+
+        // Now damage
+        EntityDamageByEntityEvent en = new EntityDamageByEntityEvent(firework, player2, DamageCause.ENTITY_EXPLOSION, 0);
+        listener.onEntityDamage(en);
+        assertFalse(en.isCancelled());
+    }
+
 }

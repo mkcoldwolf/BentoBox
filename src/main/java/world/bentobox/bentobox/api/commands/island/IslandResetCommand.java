@@ -2,149 +2,228 @@ package world.bentobox.bentobox.api.commands.island;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.Set;
 
-import org.bukkit.GameMode;
-import org.bukkit.entity.Player;
-import org.eclipse.jdt.annotation.Nullable;
+import org.eclipse.jdt.annotation.NonNull;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
 import world.bentobox.bentobox.api.commands.ConfirmableCommand;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.events.island.IslandEvent.Reason;
+import world.bentobox.bentobox.api.events.team.TeamEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
-import world.bentobox.bentobox.managers.SchemsManager;
+import world.bentobox.bentobox.managers.BlueprintsManager;
 import world.bentobox.bentobox.managers.island.NewIsland;
+import world.bentobox.bentobox.managers.island.NewIsland.Builder;
+import world.bentobox.bentobox.panels.IslandCreationPanel;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * @author tastybento
  */
 public class IslandResetCommand extends ConfirmableCommand {
 
+    private boolean noPaste;
+
     public IslandResetCommand(CompositeCommand islandCommand) {
         super(islandCommand, "reset", "restart");
     }
 
+    /**
+     * Creates the island reset command
+     * @param islandCommand - parent command
+     * @param noPaste - true if resetting should not paste a new island
+     */
+    public IslandResetCommand(CompositeCommand islandCommand, boolean noPaste) {
+        super(islandCommand, "reset", "restart");
+        this.noPaste = noPaste;
+    }
+
     @Override
     public void setup() {
-        setPermission("island.create");
+        setPermission("island.reset");
         setOnlyPlayer(true);
         setParametersHelp("commands.island.reset.parameters");
         setDescription("commands.island.reset.description");
     }
 
     @Override
-    public boolean execute(User user, String label, List<String> args) {
+    public boolean canExecute(User user, String label, List<String> args) {
         // Check cooldown
-        if (getSettings().getResetCooldown() > 0 && checkCooldown(user, null)) {
+        if (getSettings().getResetCooldown() > 0 && checkCooldown(user)) {
             return false;
         }
-
         if (!getIslands().hasIsland(getWorld(), user.getUniqueId())) {
             user.sendMessage("general.errors.no-island");
             return false;
         }
-        if (!getIslands().isOwner(getWorld(), user.getUniqueId())) {
-            user.sendMessage("general.errors.not-owner");
-            return false;
-        }
-        if (getIslands().inTeam(getWorld(), user.getUniqueId())) {
-            user.sendMessage("commands.island.reset.must-remove-members");
-            return false;
-        }
-        if (getIWM().getResetLimit(getWorld()) >= 0) {
-            int resetsLeft = getIWM().getResetLimit(getWorld()) - getPlayers().getResets(getWorld(), user.getUniqueId());
-            if (resetsLeft <= 0) {
+        int resetsLeft = getPlayers().getResetsLeft(getWorld(), user.getUniqueId());
+        if (resetsLeft != -1) {
+            // Resets are not unlimited here
+            if (resetsLeft == 0) {
+                // No resets allowed
                 user.sendMessage("commands.island.reset.none-left");
                 return false;
             } else {
+                // Still some resets left
                 // Notify how many resets are left
                 user.sendMessage("commands.island.reset.resets-left", TextVariables.NUMBER, String.valueOf(resetsLeft));
             }
         }
 
-        // Default schem is 'island'
-        String name = getSchemName(args);
-        if (name == null) {
-            // The schem name is not valid.
-            user.sendMessage("commands.island.create.unknown-schem");
-            return false;
-        }
+        return true;
+    }
 
+    @Override
+    public boolean execute(User user, String label, List<String> args) {
         // Permission check if the name is not the default one
-        String permission = getPermissionPrefix() + "island.create." + name;
-        if (!name.equals(SchemsManager.DEFAULT_SCHEM_NAME) && !user.hasPermission(permission)) {
-            user.sendMessage("general.errors.no-permission", TextVariables.PERMISSION, permission);
-            return false;
-        }
-
-        // Request confirmation
-        if (getSettings().isResetConfirmation()) {
-            this.askConfirmation(user, () -> resetIsland(user, name));
-            return true;
-        } else {
+        if (!args.isEmpty()) {
+            String name = getPlugin().getBlueprintsManager().validate(getAddon(), args.get(0).toLowerCase(java.util.Locale.ENGLISH));
+            if (name == null || name.isEmpty()) {
+                // The blueprint name is not valid.
+                user.sendMessage("commands.island.create.unknown-blueprint");
+                return false;
+            }
+            if (!getPlugin().getBlueprintsManager().checkPerm(getAddon(), user, args.get(0))) {
+                return false;
+            }
             return resetIsland(user, name);
+        } else {
+            // Show panel after confirmation
+            if (getPlugin().getSettings().isResetConfirmation()) {
+                this.askConfirmation(user, user.getTranslation("commands.island.reset.confirmation"), () -> selectBundle(user, label));
+            } else {
+                selectBundle(user, label);
+            }
+            return true;
         }
     }
 
     /**
-     * Returns the schem name from the args.
-     * {@link SchemsManager#DEFAULT_SCHEM_NAME} is the default.
-     * May be null if the schem does not exist.
-     * @param args args of the command
-     * @return schem name or null
-     * @since 1.1
+     * Either selects the bundle to use or asks the user to choose.
+     * @since 1.5.1
      */
-    @Nullable
-    private String getSchemName(List<String> args) {
-        if (args.isEmpty()) {
-            return SchemsManager.DEFAULT_SCHEM_NAME;
+    private void selectBundle(@NonNull User user, @NonNull String label) {
+        // Show panel only if there are multiple bundles available
+        if (getPlugin().getBlueprintsManager().getBlueprintBundles(getAddon()).size() > 1) {
+            // Show panel - once the player selected a bundle, this will re-run this command
+            IslandCreationPanel.openPanel(this, user, label);
+        } else {
+            resetIsland(user, BlueprintsManager.DEFAULT_BUNDLE_NAME);
         }
-
-        String name = args.get(0).toLowerCase(java.util.Locale.ENGLISH);
-        Set<String> validNames = getPlugin().getSchemsManager().get(getWorld()).keySet();
-        if (!name.equals(SchemsManager.DEFAULT_SCHEM_NAME) && !validNames.contains(name)) {
-            return null;
-        }
-        return name;
     }
 
     private boolean resetIsland(User user, String name) {
-        // Reset the island
-        Player player = user.getPlayer();
-        player.setGameMode(GameMode.SPECTATOR);
-        user.sendMessage("commands.island.create.creating-island");
         // Get the player's old island
-        Island oldIsland = getIslands().getIsland(getWorld(), player.getUniqueId());
-        // Remove them from this island (it still exists and will be deleted later)
-        getIslands().removePlayer(getWorld(), player.getUniqueId());
-        // Remove money inventory etc.
-        if (getIWM().isOnLeaveResetEnderChest(getWorld())) {
-            user.getPlayer().getEnderChest().clear();
-        }
-        if (getIWM().isOnLeaveResetInventory(getWorld())) {
-            user.getPlayer().getInventory().clear();
-        }
-        if (getSettings().isUseEconomy() && getIWM().isOnLeaveResetMoney(getWorld())) {
-            getPlugin().getVault().ifPresent(vault -> vault.withdraw(user, vault.getBalance(user)));
-        }
+        Island oldIsland = getIslands().getIsland(getWorld(), user);
+
+        // Fire island preclear event
+        IslandEvent.builder()
+        .involvedPlayer(user.getUniqueId())
+        .reason(Reason.PRECLEAR)
+        .island(oldIsland)
+        .oldIsland(oldIsland)
+        .location(oldIsland.getCenter())
+        .build();
+        
+        // Reset the island
+        user.sendMessage("commands.island.create.creating-island");
+
+        // Kick all island members (including the owner)
+        kickMembers(oldIsland);
+
         // Add a reset
         getPlayers().addReset(getWorld(), user.getUniqueId());
+
+        // Reset the homes of the player
+        getPlayers().clearHomeLocations(getWorld(), user.getUniqueId());
+
         // Create new island and then delete the old one
         try {
-            NewIsland.builder()
-            .player(user)
-            .reason(Reason.RESET)
-            .oldIsland(oldIsland)
-            .name(name)
-            .build();
+            Builder builder = NewIsland.builder()
+                    .player(user)
+                    .reason(Reason.RESET)
+                    .addon(getAddon())
+                    .oldIsland(oldIsland)
+                    .name(name);
+            if (noPaste) builder.noPaste();
+            builder.build();
         } catch (IOException e) {
             getPlugin().logError("Could not create island for player. " + e.getMessage());
-            user.sendMessage("commands.island.create.unable-create-island");
+            user.sendMessage(e.getMessage());
             return false;
         }
-        setCooldown(user.getUniqueId(), null, getSettings().getResetCooldown());
+        setCooldown(user.getUniqueId(), getSettings().getResetCooldown());
         return true;
+    }
+
+    /**
+     * Kicks the members (incl. owner) of the island.
+     * @since 1.7.0
+     */
+    private void kickMembers(Island island) {
+        /*
+         * We cannot assume the island owner can run /[cmd] team kick (it might be disabled, or there could be permission restrictions...)
+         * Therefore, we need to do it manually.
+         * Plus, a more specific team event (TeamDeleteEvent) is called by this method.
+         */
+        island.getMemberSet().forEach(memberUUID -> {
+
+            User member = User.getInstance(memberUUID);
+            // Send a "you're kicked" message if the member is not the island owner (send before removing!)
+            if (!memberUUID.equals(island.getOwner())) {
+                member.sendMessage("commands.island.reset.kicked-from-island", "[gamemode]", getAddon().getDescription().getName());
+            }
+            // Remove player
+            getIslands().removePlayer(getWorld(), memberUUID);
+
+            // Execute commands when leaving
+            Util.runCommands(member, getIWM().getOnLeaveCommands(island.getWorld()), "leave");
+
+            // Remove money inventory etc.
+            if (getIWM().isOnLeaveResetEnderChest(getWorld())) {
+                if (member.isOnline()) {
+                    member.getPlayer().getEnderChest().clear();
+                }
+                else {
+                    getPlayers().getPlayer(memberUUID).addToPendingKick(getWorld());
+                    getPlayers().save(memberUUID);
+                }
+            }
+            if (getIWM().isOnLeaveResetInventory(getWorld()) && !getIWM().isKickedKeepInventory(getWorld())) {
+                if (member.isOnline()) {
+                    member.getPlayer().getInventory().clear();
+                } else {
+                    getPlayers().getPlayer(memberUUID).addToPendingKick(getWorld());
+                    getPlayers().save(memberUUID);
+                }
+            }
+            if (getSettings().isUseEconomy() && getIWM().isOnLeaveResetMoney(getWorld())) {
+                getPlugin().getVault().ifPresent(vault -> vault.withdraw(member, vault.getBalance(member)));
+            }
+
+            // Reset the health
+            if (getIWM().isOnLeaveResetHealth(getWorld())) {
+                member.getPlayer().setHealth(20.0D);
+            }
+
+            // Reset the hunger
+            if (getIWM().isOnLeaveResetHunger(getWorld())) {
+                member.getPlayer().setFoodLevel(20);
+            }
+
+            // Reset the XP
+            if (getIWM().isOnLeaveResetXP(getWorld())) {
+                member.getPlayer().setTotalExperience(0);
+            }
+
+            // Fire event
+            TeamEvent.builder()
+            .island(island)
+            .reason(TeamEvent.Reason.DELETE)
+            .involvedPlayer(memberUUID)
+            .build();
+        });
     }
 }

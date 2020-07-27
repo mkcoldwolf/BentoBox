@@ -1,12 +1,10 @@
-/**
- *
- */
 package world.bentobox.bentobox.api.flags;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,6 +61,10 @@ public class FlagTest {
     @Mock
     private World world;
     private Map<String, Boolean> worldFlags;
+    @Mock
+    private IslandWorldManager iwm;
+    @Mock
+    private BentoBox plugin;
 
     /**
      * @throws java.lang.Exception
@@ -70,17 +72,19 @@ public class FlagTest {
     @Before
     public void setUp() throws Exception {
         // Set up plugin
-        BentoBox plugin = mock(BentoBox.class);
         Whitebox.setInternalState(BentoBox.class, "instance", plugin);
 
         PowerMockito.mockStatic(Util.class);
-        when(Util.getWorld(Mockito.any())).thenReturn(mock(World.class));
+        // Return world
+        when(Util.getWorld(Mockito.any())).thenAnswer((Answer<World>) invocation -> invocation.getArgument(0, World.class));
 
         // World Settings
-        IslandWorldManager iwm = mock(IslandWorldManager.class);
         when(plugin.getIWM()).thenReturn(iwm);
         WorldSettings ws = mock(WorldSettings.class);
-        when(iwm.getWorldSettings(Mockito.any())).thenReturn(ws);
+        when(iwm.getWorldSettings(any())).thenReturn(ws);
+        GameModeAddon gma = mock(GameModeAddon.class);
+        Optional<GameModeAddon> opGma = Optional.of(gma );
+        when(iwm.getAddon(any())).thenReturn(opGma);
 
         worldFlags = new HashMap<>();
         when(ws.getWorldFlags()).thenReturn(worldFlags);
@@ -92,7 +96,7 @@ public class FlagTest {
         when(Bukkit.getItemFactory()).thenReturn(itemF);
 
         // Flag
-        f = new Flag.Builder("flagID", Material.ACACIA_PLANKS).listener(listener).build();
+        f = new Flag.Builder("flagID", Material.ACACIA_PLANKS).type(Flag.Type.PROTECTION).listener(listener).build();
 
     }
 
@@ -100,7 +104,8 @@ public class FlagTest {
      * @throws java.lang.Exception
      */
     @After
-    public void tearDown() throws Exception {
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -193,6 +198,11 @@ public class FlagTest {
     @Test
     public void testSetDefaultSettingBoolean() {
         f.setDefaultSetting(true);
+        // Checking will set it to the default
+        assertTrue(f.isSetForWorld(world));
+        f.setDefaultSetting(false);
+        // Checking again will use the previous default
+        assertTrue(f.isSetForWorld(world));
     }
 
     /**
@@ -200,7 +210,21 @@ public class FlagTest {
      */
     @Test
     public void testSetDefaultSettingWorldBoolean() {
+
         f.setDefaultSetting(world, true);
+        assertTrue(f.isSetForWorld(world));
+        f.setDefaultSetting(world, false);
+        assertFalse(f.isSetForWorld(world));
+    }
+
+    /**
+     * Test method for {@link world.bentobox.bentobox.api.flags.Flag#setDefaultSetting(org.bukkit.World, boolean)}.
+     */
+    @Test
+    public void testSetDefaultSettingWorldBooleanNullWorldSettings() {
+        when(iwm.getWorldSettings(any())).thenReturn(null);
+        f.setDefaultSetting(world, true);
+        verify(plugin).logError("Attempt to set default world setting for unregistered world. Register flags in onEnable.");
     }
 
     /**
@@ -349,10 +373,10 @@ public class FlagTest {
         when(rm.getRank(Mockito.eq(RanksManager.OWNER_RANK))).thenReturn("Owner");
 
 
-        PanelItem pi = f.toPanelItem(plugin, user, false);
+        PanelItem pi = f.toPanelItem(plugin, user, island, false);
 
         verify(user).getTranslation(Mockito.eq("protection.flags.flagID.name"));
-        verify(user).getTranslation(Mockito.eq("protection.panel.flag-item.name-layout"), Mockito.anyVararg());
+        verify(user).getTranslation(Mockito.eq("protection.panel.flag-item.name-layout"), any());
 
         assertEquals(Material.ACACIA_PLANKS, pi.getItem().getType());
 
@@ -363,11 +387,7 @@ public class FlagTest {
      */
     @Test
     public void testToString() {
-        assertTrue(f.toString().startsWith("Flag [id=flagID, icon=ACACIA_PLANKS, listener=listener, type=PROTECTION, "
-                + "defaultSetting=false, defaultRank=500, "
-                + "clickHandler="));
-        // Handler changes so check start and end
-        assertTrue(f.toString().endsWith(", subPanel=false]"));
+        assertEquals("Flag [id=flagID]", f.toString());
     }
 
     /**
@@ -380,5 +400,6 @@ public class FlagTest {
         assertTrue(aaa.compareTo(bbb) < bbb.compareTo(aaa));
         assertTrue(aaa.compareTo(aaa) == 0);
     }
+
 
 }

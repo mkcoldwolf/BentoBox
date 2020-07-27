@@ -11,10 +11,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
+import org.eclipse.jdt.annotation.Nullable;
 
 import com.google.gson.annotations.Expose;
 
 import world.bentobox.bentobox.BentoBox;
+import world.bentobox.bentobox.api.flags.Flag;
 import world.bentobox.bentobox.util.Util;
 
 /**
@@ -22,6 +24,7 @@ import world.bentobox.bentobox.util.Util;
  *
  * @author tastybento
  */
+@Table(name = "Players")
 public class Players implements DataObject {
     @Expose
     private Map<Location, Integer> homeLocations = new HashMap<>();
@@ -43,6 +46,12 @@ public class Players implements DataObject {
     @Expose
     private Set<String> pendingKicks = new HashSet<>();
 
+    /**
+     * Stores the display mode of the Settings Panel.
+     * @since 1.6.0
+     */
+    @Expose
+    private Flag.Mode flagsDisplayMode = Flag.Mode.BASIC;
 
     /**
      * This is required for database storage
@@ -71,6 +80,7 @@ public class Players implements DataObject {
      * @param world - world to check
      * @return Location - home location in world
      */
+    @Nullable
     public Location getHomeLocation(World world) {
         return getHomeLocation(world, 1); // Default
     }
@@ -81,6 +91,7 @@ public class Players implements DataObject {
      * @param number - a number
      * @return Location of this home or null if not available
      */
+    @Nullable
     public Location getHomeLocation(World world, int number) {
         // Remove any lost worlds/locations
         homeLocations.keySet().removeIf(l -> l == null || l.getWorld() == null);
@@ -145,8 +156,7 @@ public class Players implements DataObject {
      * @return the resetsLeft
      */
     public int getResets(World world) {
-        resets.putIfAbsent(world.getName(), 0);
-        return resets.get(world.getName());
+        return resets.computeIfAbsent(world.getName(), k -> 0);
     }
 
     /**
@@ -188,7 +198,7 @@ public class Players implements DataObject {
      */
     public void setHomeLocation(Location location, int number) {
         // Remove any home locations in the same world with the same number
-        homeLocations.entrySet().removeIf(e -> Util.sameWorld(location.getWorld(), e.getKey().getWorld()) && e.getValue().equals(number));
+        homeLocations.entrySet().removeIf(e -> e.getKey() == null || (Util.sameWorld(location.getWorld(), e.getKey().getWorld()) && e.getValue().equals(number)));
         homeLocations.put(location, number);
     }
 
@@ -205,7 +215,7 @@ public class Players implements DataObject {
      * @param world - world
      */
     public void clearHomeLocations(World world) {
-        homeLocations.keySet().removeIf(l -> Util.sameWorld(l.getWorld(), world));
+        homeLocations.keySet().removeIf(l -> l == null || l.getWorld() == null || Util.sameWorld(l.getWorld(), world));
     }
 
     /**
@@ -234,7 +244,7 @@ public class Players implements DataObject {
      * @param deaths the deaths to set
      */
     public void setDeaths(World world, int deaths) {
-        this.deaths.put(world.getName(), deaths > getPlugin().getIWM().getDeathsMax(world) ? getPlugin().getIWM().getDeathsMax(world) : deaths);
+        this.deaths.put(world.getName(), Math.min(deaths, getPlugin().getIWM().getDeathsMax(world)));
     }
 
     /**
@@ -266,7 +276,7 @@ public class Players implements DataObject {
     }
 
     /**
-     * Get the number of deaths in this world
+     * Get the number of deaths in this world.
      * @param world - world
      * @return number of deaths
      */
@@ -281,33 +291,51 @@ public class Players implements DataObject {
         this.deaths = deaths;
     }
 
-
     /**
-     * This method returns the pendingKicks value.
+     * Returns the pendingKicks value.
      * @return the value of pendingKicks.
+     * @since 1.3.0
      */
     public Set<String> getPendingKicks()
     {
         return pendingKicks;
     }
 
-
     /**
-     * This method sets the pendingKicks value.
+     * Sets the pendingKicks value.
      * @param pendingKicks the pendingKicks new value.
+     * @since 1.3.0
      */
     public void setPendingKicks(Set<String> pendingKicks)
     {
         this.pendingKicks = pendingKicks;
     }
 
-
     /**
-     * This method adds given world in pendingKicks world set.
+     * Adds given world in pendingKicks world set.
      * @param world World that must be added to pendingKicks set.
+     * @since 1.3.0
      */
     public void addToPendingKick(World world)
     {
         this.pendingKicks.add(Util.getWorld(world).getName());
+    }
+
+    /**
+     * Returns the display mode for the Flags in the Settings Panel.
+     * @return the display mode for the Flags in the Settings Panel.
+     * @since 1.6.0
+     */
+    public Flag.Mode getFlagsDisplayMode() {
+        return flagsDisplayMode;
+    }
+
+    /**
+     * Sets the display mode for the Flags in the Settings Panel.
+     * @param flagsDisplayMode the display mode for the Flags in the Settings Panel.
+     * @since 1.6.0
+     */
+    public void setFlagsDisplayMode(Flag.Mode flagsDisplayMode) {
+        this.flagsDisplayMode = flagsDisplayMode;
     }
 }

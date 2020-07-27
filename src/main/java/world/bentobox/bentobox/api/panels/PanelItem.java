@@ -12,6 +12,11 @@ import org.bukkit.inventory.meta.ItemMeta;
 import world.bentobox.bentobox.api.panels.builders.PanelItemBuilder;
 import world.bentobox.bentobox.api.user.User;
 
+/**
+ * Represents an item in a {@link Panel}
+ * @author tastybento
+ *
+ */
 public class PanelItem {
 
     public static PanelItem empty() {
@@ -24,12 +29,13 @@ public class PanelItem {
     private String name;
     private boolean glow;
     private ItemMeta meta;
-    private boolean playerHead;
+    private String playerHeadName;
     private boolean invisible;
 
     public PanelItem(PanelItemBuilder builtItem) {
         this.icon = builtItem.getIcon();
-        this.playerHead = builtItem.isPlayerHead();
+        this.icon.setAmount(builtItem.getAmount());
+        this.playerHeadName = builtItem.getPlayerHeadName();
         // Get the meta
         meta = icon.getItemMeta();
         if (meta != null) {
@@ -91,17 +97,24 @@ public class PanelItem {
             if (invisible) {
                 meta.addEnchant(Enchantment.VANISHING_CURSE, 1, true);
                 meta.removeItemFlags(ItemFlag.HIDE_ENCHANTS);
-                icon.setItemMeta(meta);
             } else {
                 meta.removeEnchant(Enchantment.VANISHING_CURSE);
                 meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
-                icon.setItemMeta(meta);
             }
+            icon.setItemMeta(meta);
         }
     }
 
     public Optional<ClickHandler> getClickHandler() {
         return Optional.ofNullable(clickHandler);
+    }
+
+    /**
+     * @param clickHandler the clickHandler to set
+     * @since 1.6.0
+     */
+    public void setClickHandler(ClickHandler clickHandler) {
+        this.clickHandler = clickHandler;
     }
 
     public boolean isGlow() {
@@ -120,8 +133,16 @@ public class PanelItem {
      * @return the playerHead
      */
     public boolean isPlayerHead() {
-        return playerHead;
+        return playerHeadName != null && !playerHeadName.isEmpty();
     }
+    
+    /**
+     * @return the playerHeadName
+     * @since 1.9.0
+     */
+    public String getPlayerHeadName() {
+        return playerHeadName;
+    }      
 
     /**
      * Click handler interface
@@ -140,10 +161,13 @@ public class PanelItem {
     }
 
     public void setHead(ItemStack itemStack) {
+        // update amount before replacing.
+        itemStack.setAmount(this.icon.getAmount());
         this.icon = itemStack;
+
         // Get the meta
+        meta = icon.getItemMeta();
         if (meta != null) {
-            meta = icon.getItemMeta();
             // Set flags to neaten up the view
             meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
             meta.addItemFlags(ItemFlag.HIDE_DESTROYS);

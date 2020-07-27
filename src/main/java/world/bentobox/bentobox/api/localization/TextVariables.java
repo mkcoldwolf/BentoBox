@@ -17,4 +17,12 @@ public class TextVariables {
     public static final String SPAWN_HERE = "[spawn_here]";
     public static final String VERSION = "[version]";
     public static final String START_TEXT = "[start]";
+    /**
+     * @since 1.6.0
+     */
+    public static final String NEXT = "[next]";
+    /**
+     * @since 1.10.0
+     */
+    public static final String UNIT = "[unit]";
 }

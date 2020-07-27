@@ -1,6 +1,7 @@
 package world.bentobox.bentobox.api.commands.island.team;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -9,6 +10,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
+import world.bentobox.bentobox.api.events.island.IslandEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
@@ -48,8 +50,10 @@ public class IslandTeamUncoopCommand extends CompositeCommand {
             return false;
         }
         // Check rank to use command
-        if (getIslands().getIsland(getWorld(), user).getRank(user) < getPlugin().getSettings().getRankCommand(getUsage())) {
-            user.sendMessage("general.errors.no-permission");
+        Island island = getIslands().getIsland(getWorld(), user);
+        int rank = Objects.requireNonNull(island).getRank(user);
+        if (rank < island.getRankCommand(getUsage())) {
+            user.sendMessage("general.errors.insufficient-rank", TextVariables.RANK, user.getTranslation(getPlugin().getRanksManager().getRank(rank)));
             return false;
         }
         // Get target player
@@ -75,19 +79,26 @@ public class IslandTeamUncoopCommand extends CompositeCommand {
         User target = User.getInstance(targetUUID);
         int rank = getIslands().getIsland(getWorld(), user).getRank(target);
         if (rank != RanksManager.COOP_RANK) {
-            user.sendMessage("commands.island.team.uncoop.player-not-coop");
+            user.sendMessage("commands.island.team.uncoop.player-not-cooped");
             return false;
         }
         Island island = getIslands().getIsland(getWorld(), user.getUniqueId());
         if (island != null) {
             island.removeMember(targetUUID);
-            user.sendMessage("general.success");
+            user.sendMessage("commands.island.team.uncoop.success", TextVariables.NAME, target.getName());
             target.sendMessage("commands.island.team.uncoop.you-are-no-longer-a-coop-member", TextVariables.NAME, user.getName());
             // Set cooldown
             if (getSettings().getCoopCooldown() > 0 && getParent() != null) {
                 getParent().getSubCommand("coop").ifPresent(subCommand ->
-                subCommand.setCooldown(user.getUniqueId(), targetUUID, getSettings().getCoopCooldown() * 60));
+                subCommand.setCooldown(island.getUniqueId(), targetUUID.toString(), getSettings().getCoopCooldown() * 60));
             }
+            IslandEvent.builder()
+            .island(island)
+            .involvedPlayer(targetUUID)
+            .admin(false)
+            .reason(IslandEvent.Reason.RANK_CHANGE)
+            .rankChange(RanksManager.COOP_RANK, RanksManager.VISITOR_RANK)
+            .build();
             return true;
         } else {
             // Should not happen
@@ -107,7 +118,7 @@ public class IslandTeamUncoopCommand extends CompositeCommand {
             List<String> options = island.getMemberSet().stream()
                     .filter(uuid -> island.getRank(User.getInstance(uuid)) == RanksManager.COOP_RANK)
                     .map(Bukkit::getOfflinePlayer)
-                    .map(OfflinePlayer::getName).collect(Collectors.toList());  
+                    .map(OfflinePlayer::getName).collect(Collectors.toList());
 
             String lastArg = !args.isEmpty() ? args.get(args.size()-1) : "";
             return Optional.of(Util.tabLimit(options, lastArg));

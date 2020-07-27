@@ -2,7 +2,7 @@ package world.bentobox.bentobox.util.teleport;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
-import static org.mockito.Matchers.any;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -10,6 +10,7 @@ import java.util.Optional;
 
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -58,12 +59,9 @@ public class SafeSpotTeleportBuilderTest {
 
     }
 
-    @Test
-    public void test() throws Exception {
-        sstb = new SafeSpotTeleport.Builder(plugin);
-        sstb.build();
-        SafeSpotTeleport ttt = new SafeSpotTeleport(plugin, player, loc, null, false, 0, false);
-        assertEquals(sst, ttt);
+    @After
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     @Test

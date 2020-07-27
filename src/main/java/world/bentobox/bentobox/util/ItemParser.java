@@ -10,6 +10,8 @@ import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.potion.PotionData;
 import org.bukkit.potion.PotionType;
 
+import world.bentobox.bentobox.BentoBox;
+
 /**
  * Utility class that parses a String into an ItemStack.
  * It is used for converting config file entries to objects.
@@ -63,9 +65,6 @@ public class ItemParser {
         // Rearrange
         String[] twoer = {part[0], part[2]};
         ItemStack result = two(twoer);
-        if (result == null) {
-            return null;
-        }
         return result;
     }
 
@@ -113,14 +112,20 @@ public class ItemParser {
     private static ItemStack banner(String[] part) {
         try {
             if (part.length >= 2) {
-                ItemStack result = new ItemStack(Material.getMaterial(part[0]), Integer.parseInt(part[1]));
+                Material bannerMat = Material.getMaterial(part[0]);
+                if (bannerMat == null) {
+                    BentoBox.getInstance().logError("Could not parse banner item " + part[0] + " so using a white banner.");
+                    bannerMat = Material.WHITE_BANNER;
+                }
+                ItemStack result = new ItemStack(bannerMat, Integer.parseInt(part[1]));
 
                 BannerMeta meta = (BannerMeta) result.getItemMeta();
-                for (int i = 2; i < part.length; i += 2) {
-                    meta.addPattern(new Pattern(DyeColor.valueOf(part[i + 1]), PatternType.valueOf(part[i])));
+                if (meta != null) {
+                    for (int i = 2; i < part.length; i += 2) {
+                        meta.addPattern(new Pattern(DyeColor.valueOf(part[i + 1]), PatternType.valueOf(part[i])));
+                    }
+                    result.setItemMeta(meta);
                 }
-
-                result.setItemMeta(meta);
 
                 return result;
             } else {

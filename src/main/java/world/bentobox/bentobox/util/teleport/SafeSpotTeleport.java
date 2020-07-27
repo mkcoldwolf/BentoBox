@@ -3,23 +3,26 @@ package world.bentobox.bentobox.util.teleport;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChunkSnapshot;
-import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.World.Environment;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
+import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.user.User;
 import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.util.Pair;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * A class that calculates finds a safe spot asynchronously and then teleports the player there.
@@ -28,10 +31,11 @@ import world.bentobox.bentobox.util.Pair;
  */
 public class SafeSpotTeleport {
 
-    private static final int MAX_CHUNKS = 200;
+    private static final int MAX_CHUNKS = 6;
     private static final long SPEED = 1;
-    private static final int MAX_RADIUS = 200;
-    private boolean checking;
+    private static final int MAX_RADIUS = 50;
+    private static final int MAX_HEIGHT = 235;
+    private boolean notChecking;
     private BukkitTask task;
 
     // Parameters
@@ -39,35 +43,27 @@ public class SafeSpotTeleport {
     private final Location location;
     private boolean portal;
     private final int homeNumber;
-    private final boolean overrideGamemode;
 
     // Locations
     private Location bestSpot;
 
-    private BentoBox plugin;
+    private final BentoBox plugin;
     private List<Pair<Integer, Integer>> chunksToScan;
+    private final Runnable runnable;
+    private final CompletableFuture<Boolean> result;
 
     /**
      * Teleports and entity to a safe spot on island
-     * @param plugin - plugin object
-     * @param entity - entity to teleport
-     * @param location - the location
-     * @param failureMessage - locale key for the failure message
-     * @param portal - true if this is a portal teleport
-     * @param homeNumber - home number to go to
+     * @param builder - safe spot teleport builder
      */
-    public SafeSpotTeleport(BentoBox plugin, final Entity entity, final Location location, final String failureMessage, boolean portal, int homeNumber, boolean overrideGamemode) {
-        this.plugin = plugin;
-        this.entity = entity;
-        this.location = location;
-        this.portal = portal;
-        this.homeNumber = homeNumber;
-        this.overrideGamemode = overrideGamemode;
-
-        // Put player into spectator mode
-        if (overrideGamemode && entity instanceof Player && ((Player)entity).getGameMode().equals(GameMode.SURVIVAL)) {
-            ((Player)entity).setGameMode(GameMode.SPECTATOR);
-        }
+    SafeSpotTeleport(Builder builder) {
+        this.plugin = builder.getPlugin();
+        this.entity = builder.getEntity();
+        this.location = builder.getLocation();
+        this.portal = builder.isPortal();
+        this.homeNumber = builder.getHomeNumber();
+        this.runnable = builder.getRunnable();
+        this.result = builder.getResult();
 
         // If there is no portal scan required, try the desired location immediately
         if (plugin.getIslands().isSafeLocation(location)) {
@@ -76,77 +72,95 @@ public class SafeSpotTeleport {
                 bestSpot = location;
             } else {
                 // If this is not a portal teleport, then go to the safe location immediately
-                entity.teleport(location);
-                // Exit spectator mode if in it
-                if (entity instanceof Player) {
-                    Player player = (Player)entity;
-                    if (overrideGamemode && player.getGameMode().equals(GameMode.SPECTATOR)) {
-                        player.setGameMode(plugin.getIWM().getDefaultGameMode(player.getWorld()));
-                    }
-                }
+                Util.teleportAsync(entity, location).thenRun(() -> {
+                    if (runnable != null) Bukkit.getScheduler().runTask(plugin, runnable);
+                    result.complete(true);
+                });
                 return;
             }
         }
-
         // Get chunks to scan
         chunksToScan = getChunksToScan();
 
         // Start checking
-        checking = true;
+        notChecking = true;
 
         // Start a recurring task until done or cancelled
-        task = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            List<ChunkSnapshot> chunkSnapshot = new ArrayList<>();
-            if (checking) {
-                Iterator<Pair<Integer, Integer>> it = chunksToScan.iterator();
-                if (!it.hasNext()) {
-                    // Nothing left
-                    tidyUp(entity, failureMessage);
-                    return;
+        task = Bukkit.getScheduler().runTaskTimer(plugin, () -> gatherChunks(builder.getFailureMessage()), 0L, SPEED);
+    }
+
+    private void gatherChunks(String failureMessage) {
+        if (!notChecking) {
+            return;
+        }
+        notChecking = false;
+        List<ChunkSnapshot> chunkSnapshot = new ArrayList<>();
+        Iterator<Pair<Integer, Integer>> it = chunksToScan.iterator();
+        if (!it.hasNext()) {
+            // Nothing left
+            tidyUp(entity, failureMessage);
+            return;
+        }
+        // Add chunk snapshots to the list
+        while (it.hasNext() && chunkSnapshot.size() < MAX_CHUNKS) {
+            Pair<Integer, Integer> pair = it.next();
+            if (location.getWorld() != null) {
+                boolean isLoaded = location.getWorld().getChunkAt(pair.x, pair.z).isLoaded();
+                chunkSnapshot.add(location.getWorld().getChunkAt(pair.x, pair.z).getChunkSnapshot());
+                if (!isLoaded) {
+                    location.getWorld().getChunkAt(pair.x, pair.z).unload();
                 }
-                // Add chunk snapshots to the list
-                while (it.hasNext() && chunkSnapshot.size() < MAX_CHUNKS) {
-                    Pair<Integer, Integer> pair = it.next();
-                    chunkSnapshot.add(location.getWorld().getChunkAt(pair.x, pair.z).getChunkSnapshot());
-                    it.remove();
-                }
-                // Move to next step
-                checking = false;
-                checkChunks(chunkSnapshot);
             }
-        }, 0L, SPEED);
+            it.remove();
+        }
+        // Move to next step
+        checkChunks(chunkSnapshot);
     }
 
     private void tidyUp(Entity entity, String failureMessage) {
+        // Still Async!
         // Nothing left to check and still not canceled
         task.cancel();
         // Check portal
         if (portal && bestSpot != null) {
             // Portals found, teleport to the best spot we found
             teleportEntity(bestSpot);
-            if (overrideGamemode && entity instanceof Player && ((Player)entity).getGameMode().equals(GameMode.SPECTATOR)) {
-                ((Player)entity).setGameMode(plugin.getIWM().getDefaultGameMode(bestSpot.getWorld()));
-            }
         } else if (entity instanceof Player) {
-            // Failed, no safe spot
-            if (!failureMessage.isEmpty()) {
-                User.getInstance(entity).notify(failureMessage);
-            }
-            if (overrideGamemode && ((Player)entity).getGameMode().equals(GameMode.SPECTATOR)) {
-                if (plugin.getIWM().inWorld(entity.getLocation())) {
-                    ((Player)entity).setGameMode(plugin.getIWM().getDefaultGameMode(entity.getWorld()));
-                } else {
+            // Return to main thread and teleport the player
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                // Failed, no safe spot
+                if (!failureMessage.isEmpty()) {
+                    User.getInstance(entity).notify(failureMessage);
+                }
+                if (!plugin.getIWM().inWorld(entity.getLocation())) {
                     // Last resort
-                    ((Player)entity).setGameMode(GameMode.SURVIVAL);
-                    if (Bukkit.getServer().isPrimaryThread()) {
-                        ((Player)entity).performCommand("spawn");
+                    ((Player)entity).performCommand("spawn");
+                } else {
+                    // Create a spot for the player to be
+                    if (location.getWorld().getEnvironment().equals(Environment.NETHER)) {
+                        makeAndTelport(Material.NETHERRACK);
+                    } else if (location.getWorld().getEnvironment().equals(Environment.THE_END)) {
+                        makeAndTelport(Material.END_STONE);
                     } else {
-                        Bukkit.getScheduler().runTask(plugin, () -> ((Player)entity).performCommand("spawn"));
+                        makeAndTelport(Material.COBBLESTONE);
                     }
                 }
-            }
+                result.complete(false);
+            });
+        } else {
+            result.complete(false);
         }
+    }
 
+    private void makeAndTelport(Material m) {
+        location.getBlock().getRelative(BlockFace.DOWN).setType(m, false);
+        location.getBlock().setType(Material.AIR, false);
+        location.getBlock().getRelative(BlockFace.UP).setType(Material.AIR, false);
+        location.getBlock().getRelative(BlockFace.UP).getRelative(BlockFace.UP).setType(m, false);
+        Util.teleportAsync(entity, location.clone().add(new Vector(0.5D, 0D, 0.5D))).thenRun(() -> {
+            if (runnable != null) Bukkit.getScheduler().runTask(plugin, runnable);
+            result.complete(true);
+        });
     }
 
     /**
@@ -154,15 +168,9 @@ public class SafeSpotTeleport {
      * @return - list of chunk coords to be scanned
      */
     private List<Pair<Integer, Integer>> getChunksToScan() {
-        List<Pair<Integer, Integer>> result = new ArrayList<>();
-        // Get island if available
-        Optional<Island> island = plugin.getIslands().getIslandAt(location);
-        if (!island.isPresent()) {
-            return new ArrayList<>();
-        }
-        int maxRadius = island.map(Island::getProtectionRange).orElse(plugin.getIWM().getIslandProtectionRange(location.getWorld()));
-        maxRadius = maxRadius > MAX_RADIUS ? MAX_RADIUS : maxRadius;
-
+        List<Pair<Integer, Integer>> chunksToScan = new ArrayList<>();
+        int maxRadius = plugin.getIslands().getIslandAt(location).map(Island::getProtectionRange).orElse(plugin.getIWM().getIslandProtectionRange(location.getWorld()));
+        maxRadius = Math.min(MAX_RADIUS, maxRadius);
         int x = location.getBlockX();
         int z = location.getBlockZ();
         // Create ever increasing squares around the target location
@@ -170,28 +178,17 @@ public class SafeSpotTeleport {
         do {
             for (int i = x - radius; i <= x + radius; i+=16) {
                 for (int j = z - radius; j <= z + radius; j+=16) {
-                    addChunk(result, island, new Pair<>(i,j), new Pair<>(i >> 4, j >> 4));
+                    addChunk(chunksToScan, new Pair<>(i,j), new Pair<>(i >> 4, j >> 4));
                 }
             }
             radius++;
         } while (radius < maxRadius);
-        return result;
+        return chunksToScan;
     }
 
-    private void addChunk(List<Pair<Integer, Integer>> result, Optional<Island> island, Pair<Integer, Integer> blockCoord, Pair<Integer, Integer> chunkCoord) {
-        if (!result.contains(chunkCoord)) {
-            // Add the chunk coord
-            if (!island.isPresent()) {
-                // If there is no island, just add it
-                result.add(chunkCoord);
-            } else {
-                // If there is an island, only add it if the coord is in island space
-                island.ifPresent(is -> {
-                    if (is.inIslandSpace(blockCoord)) {
-                        result.add(chunkCoord);
-                    }
-                });
-            }
+    private void addChunk(List<Pair<Integer, Integer>> chunksToScan, Pair<Integer, Integer> blockCoord, Pair<Integer, Integer> chunkCoord) {
+        if (!chunksToScan.contains(chunkCoord) && plugin.getIslands().getIslandAt(location).map(is -> is.inIslandSpace(blockCoord)).orElse(true)) {
+            chunksToScan.add(chunkCoord);
         }
     }
 
@@ -209,7 +206,7 @@ public class SafeSpotTeleport {
                 }
             }
             // Nothing happened, change state
-            checking = true;
+            notChecking = true;
         });
     }
 
@@ -219,14 +216,12 @@ public class SafeSpotTeleport {
      * @return true if a safe spot was found
      */
     private boolean scanChunk(ChunkSnapshot chunk) {
-        // Max height
-        int maxHeight = location.getWorld().getMaxHeight() - 20;
         // Run through the chunk
         for (int x = 0; x< 16; x++) {
             for (int z = 0; z < 16; z++) {
                 // Work down from the entry point up
-                for (int y = Math.min(chunk.getHighestBlockYAt(x, z), maxHeight); y >= 0; y--) {
-                    if (checkBlock(chunk, x,y,z, maxHeight)) {
+                for (int y = Math.min(chunk.getHighestBlockYAt(x, z), MAX_HEIGHT); y >= 0; y--) {
+                    if (checkBlock(chunk, x,y,z)) {
                         return true;
                     }
                 } // end y
@@ -246,19 +241,11 @@ public class SafeSpotTeleport {
                 // Set home if so marked
                 plugin.getPlayers().setHomeLocation(User.getInstance(entity), loc, homeNumber);
             }
-            Vector velocity = entity.getVelocity();
-            entity.teleport(loc);
-            // Exit spectator mode if in it
-            if (entity instanceof Player) {
-                Player player = (Player)entity;
-                if (overrideGamemode && player.getGameMode().equals(GameMode.SPECTATOR)) {
-                    player.setGameMode(plugin.getIWM().getDefaultGameMode(loc.getWorld()));
-                }
-            } else {
-                entity.setVelocity(velocity);
-            }
+            Util.teleportAsync(entity, loc).thenRun(() -> {
+                if (runnable != null) Bukkit.getScheduler().runTask(plugin, runnable);
+                result.complete(true);
+            });
         });
-
     }
 
     /**
@@ -267,49 +254,19 @@ public class SafeSpotTeleport {
      * @param x - x coordinate
      * @param y - y coordinate
      * @param z - z coordinate
-     * @param worldHeight - height of world
      * @return true if this is a safe spot, false if this is a portal scan
      */
-    private boolean checkBlock(ChunkSnapshot chunk, int x, int y, int z, int worldHeight) {
+    boolean checkBlock(ChunkSnapshot chunk, int x, int y, int z) {
         World world = location.getWorld();
         Material type = chunk.getBlockType(x, y, z);
-        if (!type.equals(Material.AIR)) { // AIR
-            Material space1 = chunk.getBlockType(x, Math.min(y + 1, worldHeight), z);
-            Material space2 = chunk.getBlockType(x, Math.min(y + 2, worldHeight), z);
-            if ((space1.equals(Material.AIR) && space2.equals(Material.AIR)) || (space1.equals(Material.NETHER_PORTAL) && space2.equals(Material.NETHER_PORTAL))
-                    && (!type.toString().contains("FENCE") && !type.toString().contains("DOOR") && !type.toString().contains("GATE") && !type.toString().contains("PLATE"))) {
-                switch (type) {
-                // Unsafe
-                case ANVIL:
-                case BARRIER:
-                case CACTUS:
-                case END_PORTAL:
-                case FIRE:
-                case FLOWER_POT:
-                case LADDER:
-                case LAVA:
-                case LEVER:
-                case TALL_GRASS:
-                case PISTON_HEAD:
-                case MOVING_PISTON:
-                case SIGN:
-                case STONE_BUTTON:
-                case TORCH:
-                case TRIPWIRE:
-                case WATER:
-                case COBWEB:
-                    //Block is dangerous
-                    break;
-                case NETHER_PORTAL:
-                    if (portal) {
-                        // A portal has been found, switch to non-portal mode now
-                        portal = false;
-                    }
-                    break;
-                default:
-                    return safe(chunk, x, y, z, world);
-                }
-            }
+        Material space1 = chunk.getBlockType(x, Math.min(y + 1, SafeSpotTeleport.MAX_HEIGHT), z);
+        Material space2 = chunk.getBlockType(x, Math.min(y + 2, SafeSpotTeleport.MAX_HEIGHT), z);
+        if (space1.equals(Material.NETHER_PORTAL) || space2.equals(Material.NETHER_PORTAL)) {
+            // A portal has been found, switch to non-portal mode now
+            portal = false;
+        }
+        if (plugin.getIslands().checkIfSafe(world, type, space1, space2)) {
+            return safe(chunk, x, y, z, world);
         }
         return false;
     }
@@ -329,13 +286,14 @@ public class SafeSpotTeleport {
     }
 
     public static class Builder {
-        private BentoBox plugin;
+        private final BentoBox plugin;
         private Entity entity;
         private int homeNumber = 0;
         private boolean portal = false;
         private String failureMessage = "";
         private Location location;
-        private boolean overrideGamemode = true;
+        private Runnable runnable;
+        private CompletableFuture<Boolean> result = new CompletableFuture<>();
 
         public Builder(BentoBox plugin) {
             this.plugin = plugin;
@@ -401,33 +359,105 @@ public class SafeSpotTeleport {
         }
 
         /**
-         * Sets whether the player's gamemode should be overridden. Default is <tt>true</tt>
-         * @param overrideGamemode whether the player's gamemode should be overridden.
-         * @return Builder
+         * Try to teleport the player
+         * @return CompletableFuture that will become true if successfull and false if not
+         * @since 1.14.0
          */
-        public Builder overrideGamemode(boolean overrideGamemode) {
-            this.overrideGamemode = overrideGamemode;
-            return this;
+        @Nullable
+        public CompletableFuture<Boolean> buildFuture() {
+            build();
+            return result;
         }
-
+        
         /**
          * Try to teleport the player
          * @return SafeSpotTeleport
          */
+        @Nullable
         public SafeSpotTeleport build() {
             // Error checking
             if (entity == null) {
                 plugin.logError("Attempt to safe teleport a null entity!");
+                result.complete(null);
                 return null;
             }
             if (location == null) {
                 plugin.logError("Attempt to safe teleport to a null location!");
+                result.complete(null);
                 return null;
             }
             if (failureMessage.isEmpty() && entity instanceof Player) {
-                failureMessage = "general.errors.warp-not-safe";
+                failureMessage = "general.errors.no-safe-location-found";
             }
-            return new SafeSpotTeleport(plugin, entity, location, failureMessage, portal, homeNumber, overrideGamemode);
+            return new SafeSpotTeleport(this);
+        }
+
+        /**
+         * The task to run after the player is safely teleported.
+         * @param runnable - task
+         * @return Builder
+         * @since 1.13.0
+         */
+        public Builder thenRun(Runnable runnable) {
+            this.runnable = runnable;
+            return this;
+        }
+
+        /**
+         * @return the plugin
+         */
+        public BentoBox getPlugin() {
+            return plugin;
+        }
+
+        /**
+         * @return the entity
+         */
+        public Entity getEntity() {
+            return entity;
+        }
+
+        /**
+         * @return the homeNumber
+         */
+        public int getHomeNumber() {
+            return homeNumber;
+        }
+
+        /**
+         * @return the portal
+         */
+        public boolean isPortal() {
+            return portal;
+        }
+
+        /**
+         * @return the failureMessage
+         */
+        public String getFailureMessage() {
+            return failureMessage;
+        }
+
+        /**
+         * @return the location
+         */
+        public Location getLocation() {
+            return location;
+        }
+
+        /**
+         * @return the runnable
+         */
+        public Runnable getRunnable() {
+            return runnable;
+        }
+
+        /**
+         * @return the result
+         * @since 1.14.0
+         */
+        public CompletableFuture<Boolean> getResult() {
+            return result;
         }
     }
 }

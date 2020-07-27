@@ -8,8 +8,10 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.EntityBlockFormEvent;
+import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+
 import world.bentobox.bentobox.api.flags.FlagListener;
 import world.bentobox.bentobox.lists.Flags;
 
@@ -25,9 +27,22 @@ public class PlaceBlocksListener extends FlagListener {
      */
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onBlockPlace(final BlockPlaceEvent e) {
-        if (e.getBlock().getType().equals(Material.FIRE)) {
+        if (e.getBlock().getType().equals(Material.FIRE)
+                || e.getItemInHand() == null // Note that this should never happen officially, but it's possible for other plugins to cause it to happen
+                || e.getItemInHand().getType().equals(Material.WRITABLE_BOOK)
+                || e.getItemInHand().getType().equals(Material.WRITTEN_BOOK)) {
+            // Books can only be placed on lecterns and as such are protected by the LECTERN flag.
             return;
         }
+        checkIsland(e, e.getPlayer(), e.getBlock().getLocation(), Flags.PLACE_BLOCKS);
+    }
+
+    /**
+     * Check for paintings and other hanging placements
+     * @param e - event
+     */
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onHangingPlace(final HangingPlaceEvent e) {
         checkIsland(e, e.getPlayer(), e.getBlock().getLocation(), Flags.PLACE_BLOCKS);
     }
 
@@ -38,7 +53,8 @@ public class PlaceBlocksListener extends FlagListener {
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPlayerHitItemFrame(PlayerInteractEntityEvent e) {
         if (e.getRightClicked().getType().equals(EntityType.ITEM_FRAME)) {
-            checkIsland(e, e.getPlayer(), e.getRightClicked().getLocation(), Flags.PLACE_BLOCKS);
+            if (!checkIsland(e, e.getPlayer(), e.getRightClicked().getLocation(), Flags.PLACE_BLOCKS)) return;
+            checkIsland(e, e.getPlayer(), e.getRightClicked().getLocation(), Flags.ITEM_FRAME);
         }
     }
 

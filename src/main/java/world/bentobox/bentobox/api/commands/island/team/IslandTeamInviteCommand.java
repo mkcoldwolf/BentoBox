@@ -2,117 +2,135 @@ package world.bentobox.bentobox.api.commands.island.team;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
-import org.bukkit.Bukkit;
-import org.bukkit.OfflinePlayer;
-
-import com.google.common.collect.BiMap;
-import com.google.common.collect.HashBiMap;
+import org.eclipse.jdt.annotation.Nullable;
 
 import world.bentobox.bentobox.api.commands.CompositeCommand;
-import world.bentobox.bentobox.api.events.IslandBaseEvent;
+import world.bentobox.bentobox.api.commands.island.team.Invite.Type;
 import world.bentobox.bentobox.api.events.team.TeamEvent;
 import world.bentobox.bentobox.api.localization.TextVariables;
 import world.bentobox.bentobox.api.user.User;
+import world.bentobox.bentobox.database.objects.Island;
 import world.bentobox.bentobox.util.Util;
 
 public class IslandTeamInviteCommand extends CompositeCommand {
 
-    private BiMap<UUID, UUID> inviteList;
+    private IslandTeamCommand itc;
+    private @Nullable User invitedPlayer;
 
-    public IslandTeamInviteCommand(CompositeCommand islandCommand) {
-        super(islandCommand, "invite");
+    public IslandTeamInviteCommand(IslandTeamCommand parent) {
+        super(parent, "invite");
+        itc = parent;
     }
 
     @Override
     public void setup() {
-        setPermission("island.team");
+        setPermission("island.team.invite");
         setOnlyPlayer(true);
         setDescription("commands.island.team.invite.description");
-        inviteList = HashBiMap.create();
         setConfigurableRankCommand();
     }
 
+
     @Override
-    public boolean execute(User user, String label, List<String> args) {
-        UUID playerUUID = user.getUniqueId();
+    public boolean canExecute(User user, String label, List<String> args) {
         // Player issuing the command must have an island or be in a team
         if (!getIslands().inTeam(getWorld(), user.getUniqueId()) && !getIslands().hasIsland(getWorld(), user.getUniqueId())) {
             user.sendMessage("general.errors.no-island");
             return false;
         }
         // Check rank to use command
-        if (getIslands().getIsland(getWorld(), user).getRank(user) < getPlugin().getSettings().getRankCommand(getUsage())) {
-            user.sendMessage("general.errors.no-permission");
+        Island island = getIslands().getIsland(getWorld(), user);
+        int rank = Objects.requireNonNull(island).getRank(user);
+        if (rank < island.getRankCommand(getUsage())) {
+            user.sendMessage("general.errors.insufficient-rank", TextVariables.RANK, user.getTranslation(getPlugin().getRanksManager().getRank(rank)));
             return false;
         }
-        if (args.isEmpty() || args.size() > 1) {
-            // Invite label with no name, i.e., /island invite - tells the player who has invited them so far
-            if (inviteList.containsKey(playerUUID)) {
-                OfflinePlayer inviter = Bukkit.getServer().getOfflinePlayer(inviteList.get(playerUUID));
-                user.sendMessage("commands.island.team.invite.name-has-invited-you", TextVariables.NAME, inviter.getName());
+        UUID playerUUID = user.getUniqueId();
+        if (args.size() != 1) {
+            // Invite label with no name, i.e., /island invite - tells the player who has invited them so far and why
+            if (itc.isInvited(playerUUID)) {
+                Invite invite = itc.getInvite(playerUUID);
+                String name = getPlayers().getName(playerUUID);
+                switch (invite.getType()) {
+                case COOP:
+                    user.sendMessage("commands.island.team.invite.name-has-invited-you.coop", TextVariables.NAME, name);
+                    break;
+                case TRUST:
+                    user.sendMessage("commands.island.team.invite.name-has-invited-you.trust", TextVariables.NAME, name);
+                    break;
+                default:
+                    user.sendMessage("commands.island.team.invite.name-has-invited-you", TextVariables.NAME, name);
+                    break;
+                }
                 return true;
             }
             // Show help
             showHelp(this, user);
             return false;
-        } else  {
-            // Only online players can be invited
-            UUID invitedPlayerUUID = getPlayers().getUUID(args.get(0));
-            if (invitedPlayerUUID == null) {
-                user.sendMessage("general.errors.unknown-player", TextVariables.NAME, args.get(0));
-                return false;
-            }
-            User invitedPlayer = User.getInstance(invitedPlayerUUID);
-            if (!invitedPlayer.isOnline()) {
-                user.sendMessage("general.errors.offline-player");
-                return false;
-            }
-            // Player cannot invite themselves
-            if (playerUUID.equals(invitedPlayerUUID)) {
-                user.sendMessage("commands.island.team.invite.errors.cannot-invite-self");
-                return false;
-            }
-            // Check cool down
-            if (getSettings().getInviteCooldown() > 0 && checkCooldown(user, invitedPlayerUUID)) {
-                return false;
-            }
-            // Player cannot invite someone already on a team
-            if (getIslands().inTeam(getWorld(), invitedPlayerUUID)) {
-                user.sendMessage("commands.island.team.invite.errors.already-on-team");
-                return false;
-            }
-            return invite(user,invitedPlayer);
         }
+
+        // Only online players can be invited
+        UUID invitedPlayerUUID = getPlayers().getUUID(args.get(0));
+        if (invitedPlayerUUID == null) {
+            user.sendMessage("general.errors.unknown-player", TextVariables.NAME, args.get(0));
+            return false;
+        }
+        invitedPlayer = User.getInstance(invitedPlayerUUID);
+        if (!invitedPlayer.isOnline()) {
+            user.sendMessage("general.errors.offline-player");
+            return false;
+        }
+        // Player cannot invite themselves
+        if (playerUUID.equals(invitedPlayerUUID)) {
+            user.sendMessage("commands.island.team.invite.errors.cannot-invite-self");
+            return false;
+        }
+        // Check cool down
+        if (getSettings().getInviteCooldown() > 0 && checkCooldown(user, getIslands().getIsland(getWorld(), user).getUniqueId(), invitedPlayerUUID.toString())) {
+            return false;
+        }
+        // Player cannot invite someone already on a team
+        if (getIslands().inTeam(getWorld(), invitedPlayerUUID)) {
+            user.sendMessage("commands.island.team.invite.errors.already-on-team");
+            return false;
+        }
+        if (itc.isInvited(invitedPlayerUUID) && itc.getInviter(invitedPlayerUUID).equals(user.getUniqueId()) && itc.getInvite(invitedPlayerUUID).getType().equals(Type.TEAM)) {
+            // Prevent spam
+            user.sendMessage("commands.island.team.invite.errors.you-have-already-invited");
+            return false;
+        }
+        return true;
     }
 
-    private boolean invite(User user, User invitedPlayer) {
+    @Override
+    public boolean execute(User user, String label, List<String> args) {
         Set<UUID> teamMembers = getMembers(getWorld(), user);
         // Check if player has space on their team
         int maxSize = getMaxTeamSize(user);
         if (teamMembers.size() < maxSize) {
             // If that player already has an invite out then retract it.
             // Players can only have one invite one at a time - interesting
-            if (inviteList.containsValue(user.getUniqueId())) {
-                inviteList.inverse().remove(user.getUniqueId());
+            if (itc.isInvited(invitedPlayer.getUniqueId())) {
+                itc.removeInvite(invitedPlayer.getUniqueId());
                 user.sendMessage("commands.island.team.invite.removing-invite");
             }
             // Fire event so add-ons can run commands, etc.
-            IslandBaseEvent event = TeamEvent.builder()
+            if (TeamEvent.builder()
                     .island(getIslands().getIsland(getWorld(), user.getUniqueId()))
                     .reason(TeamEvent.Reason.INVITE)
                     .involvedPlayer(invitedPlayer.getUniqueId())
-                    .build();
-            Bukkit.getServer().getPluginManager().callEvent(event);
-            if (event.isCancelled()) {
+                    .build()
+                    .isCancelled()) {
                 return false;
             }
             // Put the invited player (key) onto the list with inviter (value)
             // If someone else has invited a player, then this invite will overwrite the previous invite!
-            inviteList.put(invitedPlayer.getUniqueId(), user.getUniqueId());
+            itc.addInvite(Invite.Type.TEAM, user.getUniqueId(), invitedPlayer.getUniqueId());
             user.sendMessage("commands.island.team.invite.invitation-sent", TextVariables.NAME, invitedPlayer.getName());
             // Send message to online player
             invitedPlayer.sendMessage("commands.island.team.invite.name-has-invited-you", TextVariables.NAME, user.getName());
@@ -136,14 +154,6 @@ public class IslandTeamInviteCommand extends CompositeCommand {
         }
         List<String> options = new ArrayList<>(Util.getOnlinePlayerList(user));
         return Optional.of(Util.tabLimit(options, lastArg));
-    }
-
-    /**
-     * Order is Invited, Inviter
-     * @return the inviteList
-     */
-    public BiMap<UUID, UUID> getInviteList() {
-        return inviteList;
     }
 
     /**

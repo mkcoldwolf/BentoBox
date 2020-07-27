@@ -1,9 +1,7 @@
-/**
- *
- */
 package world.bentobox.bentobox.api.commands.admin.range;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -17,10 +15,13 @@ import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.scheduler.BukkitScheduler;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 import org.powermock.api.mockito.PowerMockito;
@@ -38,6 +39,7 @@ import world.bentobox.bentobox.managers.IslandWorldManager;
 import world.bentobox.bentobox.managers.IslandsManager;
 import world.bentobox.bentobox.managers.LocalesManager;
 import world.bentobox.bentobox.managers.PlayersManager;
+import world.bentobox.bentobox.util.Util;
 
 /**
  * @author tastybento
@@ -52,6 +54,8 @@ public class AdminRangeSetCommandTest {
     private User user;
     private IslandsManager im;
     private PlayersManager pm;
+    @Mock
+    private PluginManager pim;
 
 
     /**
@@ -62,6 +66,7 @@ public class AdminRangeSetCommandTest {
         // Set up plugin
         BentoBox plugin = mock(BentoBox.class);
         Whitebox.setInternalState(BentoBox.class, "instance", plugin);
+        Util.setPlugin(plugin);
 
         // Command manager
         CommandsManager cm = mock(CommandsManager.class);
@@ -116,16 +121,23 @@ public class AdminRangeSetCommandTest {
         BukkitScheduler sch = mock(BukkitScheduler.class);
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getScheduler()).thenReturn(sch);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         // Locales
         LocalesManager lm = mock(LocalesManager.class);
-        Answer<String> answer = invocation -> invocation.getArgumentAt(1, String.class);
+        Answer<String> answer = invocation -> invocation.getArgument(1, String.class);
 
         when(lm.get(Mockito.any(), Mockito.any())).thenAnswer(answer );
         when(plugin.getLocalesManager()).thenReturn(lm);
 
         // Addon
         when(iwm.getAddon(Mockito.any())).thenReturn(Optional.empty());
+    }
+
+    @After
+    public void tearDown() {
+        User.clearUsers();
+        Mockito.framework().clearInlineMocks();
     }
 
     /**
@@ -168,15 +180,29 @@ public class AdminRangeSetCommandTest {
      * Test method for {@link world.bentobox.bentobox.api.commands.admin.range.AdminRangeSetCommand#execute(world.bentobox.bentobox.api.user.User, java.lang.String, java.util.List)}.
      */
     @Test
-    public void testExecuteKnownPlayerNoIsland() {
+    public void testExecuteKnownPlayerNotOwnerNoTeam() {
         when(pm.getUUID(Mockito.anyString())).thenReturn(uuid);
         when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
+        when(im.inTeam(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
         AdminRangeSetCommand arc = new AdminRangeSetCommand(ac);
         List<String> args = new ArrayList<>();
         args.add("tastybento");
         args.add("100");
         arc.execute(user, "", args);
         Mockito.verify(user).sendMessage("general.errors.player-has-no-island");
+    }
+
+    @Test
+    public void testExecuteKnownPlayerNotOwnerButInTeam() {
+        when(pm.getUUID(Mockito.anyString())).thenReturn(uuid);
+        when(im.hasIsland(Mockito.any(), Mockito.any(UUID.class))).thenReturn(false);
+        when(im.inTeam(Mockito.any(), Mockito.any(UUID.class))).thenReturn(true);
+        AdminRangeSetCommand arc = new AdminRangeSetCommand(ac);
+        List<String> args = new ArrayList<>();
+        args.add("tastybento");
+        args.add("100");
+        arc.execute(user, "", args);
+        Mockito.verify(user, never()).sendMessage("general.errors.player-has-no-island");
     }
 
     /**
@@ -190,7 +216,7 @@ public class AdminRangeSetCommandTest {
         args.add("tastybento");
         args.add("100");
         arc.execute(user, "", args);
-        Mockito.verify(user).sendMessage("commands.admin.range.set.invalid-value.too-high", TextVariables.NUMBER, "50");
+        Mockito.verify(user).sendMessage("commands.admin.range.invalid-value.too-high", TextVariables.NUMBER, "50");
     }
 
     /**
@@ -204,13 +230,13 @@ public class AdminRangeSetCommandTest {
         args.add("tastybento");
         args.add("NAN");
         arc.execute(user, "", args);
-        Mockito.verify(user).sendMessage("commands.admin.range.set.invalid-value.not-numeric", TextVariables.NUMBER, "NAN");
+        Mockito.verify(user).sendMessage("general.errors.must-be-positive-number", TextVariables.NUMBER, "NAN");
     }
 
     /**
      * Test method for {@link world.bentobox.bentobox.api.commands.admin.range.AdminRangeSetCommand#execute(world.bentobox.bentobox.api.user.User, java.lang.String, java.util.List)}.
      */
-    @Test
+    @Test()
     public void testExecuteDoubleNumber() {
         when(pm.getUUID(Mockito.anyString())).thenReturn(uuid);
         AdminRangeSetCommand arc = new AdminRangeSetCommand(ac);
@@ -218,7 +244,7 @@ public class AdminRangeSetCommandTest {
         args.add("tastybento");
         args.add("3.141592654");
         arc.execute(user, "", args);
-        Mockito.verify(user).sendMessage("commands.admin.range.set.invalid-value.not-numeric", TextVariables.NUMBER, "3.141592654");
+        Mockito.verify(user).sendMessage("general.errors.must-be-positive-number", TextVariables.NUMBER, "3.141592654");
     }
 
     /**
@@ -232,7 +258,7 @@ public class AdminRangeSetCommandTest {
         args.add("tastybento");
         args.add("0");
         arc.execute(user, "", args);
-        Mockito.verify(user).sendMessage("commands.admin.range.set.invalid-value.too-low", TextVariables.NUMBER, "0");
+        Mockito.verify(user).sendMessage("commands.admin.range.invalid-value.too-low", TextVariables.NUMBER, "0");
     }
 
     /**
@@ -246,7 +272,7 @@ public class AdminRangeSetCommandTest {
         args.add("tastybento");
         args.add("-437645");
         arc.execute(user, "", args);
-        Mockito.verify(user).sendMessage("commands.admin.range.set.invalid-value.not-numeric", TextVariables.NUMBER, "-437645");
+        Mockito.verify(user).sendMessage("general.errors.must-be-positive-number", TextVariables.NUMBER, "-437645");
     }
 
     /**
@@ -260,7 +286,7 @@ public class AdminRangeSetCommandTest {
         args.add("tastybento");
         args.add("50");
         arc.execute(user, "", args);
-        Mockito.verify(user).sendMessage("commands.admin.range.set.invalid-value.same-as-before", TextVariables.NUMBER, "50");
+        Mockito.verify(user).sendMessage("commands.admin.range.invalid-value.same-as-before", TextVariables.NUMBER, "50");
     }
 
     /**

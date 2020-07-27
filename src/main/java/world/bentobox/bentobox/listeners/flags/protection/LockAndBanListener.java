@@ -1,7 +1,6 @@
 package world.bentobox.bentobox.listeners.flags.protection;
 
 import org.bukkit.Bukkit;
-import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
@@ -13,6 +12,7 @@ import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.vehicle.VehicleMoveEvent;
 import org.bukkit.util.Vector;
 
+import io.papermc.lib.PaperLib;
 import world.bentobox.bentobox.BentoBox;
 import world.bentobox.bentobox.api.flags.FlagListener;
 import world.bentobox.bentobox.api.user.User;
@@ -26,9 +26,22 @@ import world.bentobox.bentobox.lists.Flags;
  */
 public class LockAndBanListener extends FlagListener {
 
+    /**
+     * Result of checking the island for locked state or player bans
+     *
+     */
     private enum CheckResult {
+        /**
+         * player is banned from island
+         */
         BANNED,
+        /**
+         * Island is locked
+         */
         LOCKED,
+        /**
+         * Island is open for teleporting
+         */
         OPEN
     }
 
@@ -47,7 +60,7 @@ public class LockAndBanListener extends FlagListener {
         }
         if (!checkAndNotify(e.getPlayer(), e.getTo()).equals(CheckResult.OPEN)) {
             e.setCancelled(true);
-            e.getFrom().getWorld().playSound(e.getFrom(), Sound.BLOCK_ANVIL_HIT, 1F, 1F);
+            e.getPlayer().playSound(e.getFrom(), Sound.BLOCK_ANVIL_HIT, 1F, 1F);
             e.getPlayer().setVelocity(new Vector(0,0,0));
             e.getPlayer().setGliding(false);
         }
@@ -70,7 +83,7 @@ public class LockAndBanListener extends FlagListener {
             if (!checkAndNotify(p, e.getTo()).equals(CheckResult.OPEN)) {
                 p.leaveVehicle();
                 p.teleport(e.getFrom());
-                e.getFrom().getWorld().playSound(e.getFrom(), Sound.BLOCK_ANVIL_HIT, 1F, 1F);
+                e.getVehicle().getWorld().playSound(e.getFrom(), Sound.BLOCK_ANVIL_HIT, 1F, 1F);
                 eject(p);
             }
         });
@@ -99,10 +112,10 @@ public class LockAndBanListener extends FlagListener {
         return getIslands().getProtectedIslandAt(loc)
                 .map(is -> {
                     if (is.isBanned(player.getUniqueId())) {
-                        return player.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + ".mod.bypassban") ? CheckResult.OPEN : CheckResult.BANNED;
+                        return player.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + "mod.bypassban") ? CheckResult.OPEN : CheckResult.BANNED;
                     }
                     if (!is.isAllowed(User.getInstance(player), Flags.LOCK)) {
-                        return player.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + ".mod.bypasslock") ? CheckResult.OPEN : CheckResult.LOCKED;
+                        return player.hasPermission(getIWM().getPermissionPrefix(loc.getWorld()) + "mod.bypasslock") ? CheckResult.OPEN : CheckResult.LOCKED;
                     }
                     return CheckResult.OPEN;
                 }).orElse(CheckResult.OPEN);
@@ -134,24 +147,23 @@ public class LockAndBanListener extends FlagListener {
      * @param player - player
      */
     private void eject(Player player) {
-        player.setGameMode(GameMode.SPECTATOR);
         // Teleport player to their home
-        if (getIslands().hasIsland(player.getWorld(), player.getUniqueId())) {
-            getIslands().homeTeleport(player.getWorld(), player);
+        if (getIslands().hasIsland(player.getWorld(), player.getUniqueId()) || getIslands().inTeam(player.getWorld(), player.getUniqueId())) {
+            getIslands().homeTeleportAsync(player.getWorld(), player);
         } else if (getIslands().getSpawn(player.getWorld()).isPresent()) {
             // Else, try to teleport him to the world spawn
             getIslands().spawnTeleport(player.getWorld(), player);
         } else {
             // There's nothing much we can do.
             // We'll try to teleport him to the spawn...
-            player.teleport(player.getWorld().getSpawnLocation());
+            PaperLib.teleportAsync(player, player.getWorld().getSpawnLocation());
 
             // Switch him back to the default gamemode. He may die, sorry :(
             player.setGameMode(getIWM().getDefaultGameMode(player.getWorld()));
 
             // Log
-            getPlugin().log("Could not teleport '" + player.getName() + "' back to his island or the spawn.");
-            getPlugin().log("Please consider setting a spawn for this world using the admin setspawn command.");
+            getPlugin().logWarning("Could not teleport '" + player.getName() + "' back to his island or the spawn.");
+            getPlugin().logWarning("Please consider setting a spawn for this world using the admin setspawn command.");
         }
     }
 }

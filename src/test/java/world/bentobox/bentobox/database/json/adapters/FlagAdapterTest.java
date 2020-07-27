@@ -1,8 +1,10 @@
 package world.bentobox.bentobox.database.json.adapters;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.mockito.Matchers.any;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -13,6 +15,7 @@ import org.bukkit.Server;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.PluginManager;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -46,14 +49,14 @@ public class FlagAdapterTest {
 
         Server server = mock(Server.class);
 
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(server.getPluginManager()).thenReturn(pluginManager);
+        PluginManager pim = mock(PluginManager.class);
 
         ItemFactory itemFactory = mock(ItemFactory.class);
         when(server.getItemFactory()).thenReturn(itemFactory);
 
         PowerMockito.mockStatic(Bukkit.class);
         when(Bukkit.getServer()).thenReturn(server);
+        when(Bukkit.getPluginManager()).thenReturn(pim);
 
         ItemMeta meta = mock(ItemMeta.class);
         when(itemFactory.getItemMeta(any())).thenReturn(meta);
@@ -63,23 +66,23 @@ public class FlagAdapterTest {
         when(plugin.getFlagsManager()).thenReturn(flagsManager);
     }
 
-    @Test
-    public void testFlagAdapter() {
-        new FlagAdapter(plugin);
+    @After
+    public void tearDown() {
+        Mockito.framework().clearInlineMocks();
     }
 
     @Test
     public void testWriteJsonWriterFlag() throws IOException {
-        FlagAdapter fa = new FlagAdapter(plugin);
+        FlagTypeAdapter fa = new FlagTypeAdapter(plugin);
         JsonWriter out = mock(JsonWriter.class);
-        Flag value = Flags.ANIMAL_SPAWN;
+        Flag value = Flags.ANVIL;
         fa.write(out, value);
-        Mockito.verify(out).value("ANIMAL_SPAWN");
+        Mockito.verify(out).value("ANVIL");
     }
 
     @Test
     public void testWriteJsonWriterFlagNull() throws IOException {
-        FlagAdapter fa = new FlagAdapter(plugin);
+        FlagTypeAdapter fa = new FlagTypeAdapter(plugin);
         JsonWriter out = mock(JsonWriter.class);
         Flag value = null;
         fa.write(out, value);
@@ -88,7 +91,7 @@ public class FlagAdapterTest {
 
     @Test
     public void testReadJsonReaderNull() throws IOException {
-        FlagAdapter fa = new FlagAdapter(plugin);
+        FlagTypeAdapter fa = new FlagTypeAdapter(plugin);
         JsonReader reader = mock(JsonReader.class);
         Mockito.when(reader.peek()).thenReturn(JsonToken.NULL);
         Flag flag = fa.read(reader);
@@ -98,12 +101,24 @@ public class FlagAdapterTest {
 
     @Test
     public void testReadJsonReader() throws IOException {
-        FlagAdapter fa = new FlagAdapter(plugin);
+        FlagTypeAdapter fa = new FlagTypeAdapter(plugin);
         JsonReader reader = mock(JsonReader.class);
         Mockito.when(reader.peek()).thenReturn(JsonToken.STRING);
-        Mockito.when(reader.nextString()).thenReturn("ANIMAL_SPAWN");
+        Mockito.when(reader.nextString()).thenReturn("ANVIL");
         Flag flag = fa.read(reader);
         Mockito.verify(reader).nextString();
-        assertEquals(Flags.ANIMAL_SPAWN, flag);
+        assertEquals(Flags.ANVIL, flag);
+    }
+
+    @Test
+    public void testReadJsonReaderNoSuchFlag() throws IOException {
+        FlagTypeAdapter fa = new FlagTypeAdapter(plugin);
+        JsonReader reader = mock(JsonReader.class);
+        Mockito.when(reader.peek()).thenReturn(JsonToken.STRING);
+        Mockito.when(reader.nextString()).thenReturn("MUMBO_JUMBO");
+        Flag flag = fa.read(reader);
+        Mockito.verify(reader).nextString();
+        assertNotNull(flag);
+        assertTrue(flag.getID().startsWith("NULL_FLAG_"));
     }
 }
